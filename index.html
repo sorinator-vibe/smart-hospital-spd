@@ -20856,6 +20856,7 @@ class Component extends DCLogic {
   }
   _setView(v) {
     if (this.state.view !== v) this.setState({ view: v });
+    if (v === 'walk' || v === 'lift') { if (this.state.active) this._setActive(null); }   // clear the right-slot pane (Operations / Process Loop / Agentic AI) so the view is unobstructed
     if (v === 'walk') this._enterStreet(); else if (v === 'lift') this._enterLiftArea(); else this._exitStreet();
   }
   _enterLiftArea() {
