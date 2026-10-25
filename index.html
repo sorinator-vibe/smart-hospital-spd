@@ -21130,6 +21130,9 @@ class Component extends DCLogic {
     this._detailGroup.visible = (detail === 'Cinematic');
     this._routeGroup.visible = this.props.routes ?? true;
 
+    // humanoid workforce: jobs, props, new tote runner (needs every station built first)
+    this._buildCrewJobs(scene);
+
     // ---------- populate layer registry from built objects ----------
     const L = this._lay;
     L.humanoids = this._anim.galbots.map(g => g.obj).concat(this._anim.humans.map(h => h.obj));
@@ -21278,7 +21281,7 @@ class Component extends DCLogic {
     // STERILE STORAGE: high-density narrow racks
     {
       const r = this._room('storage');
-      for (let i = 0; i < 5; i++) scene.add(this._hdRack(r.cx - 5.2 + i * 2.6, r.cz, i === 0 ? [0, 6] : null));
+      for (let i = 0; i < 5; i++) scene.add(this._hdRack(r.cx - 5.2 + i * 2.6, r.cz, i === 0 ? [0, 6] : null, i === 0 ? [[4, 3]] : null));
     }
     // DISPATCH / LIFTS: elevator bank + sterile staging carts
     {
@@ -21325,7 +21328,7 @@ class Component extends DCLogic {
     return g;
   }
 
-  _hdRack(x, z, armCols) {
+  _hdRack(x, z, armCols, freeSlots) {
     const g = new THREE.Group();
     const steel = this._mat(0x6f8197, 0.4, 0.7);
     const railM = this._mat(0x2f3540, 0.5, 0.4);
@@ -21337,7 +21340,7 @@ class Component extends DCLogic {
       const sh = this._box(w, 0.06, d, steel); sh.position.set(0, 0.5 + s * 0.64, 0); g.add(sh);
       for (let c = 0; c < 7; c++) {
         const cz = -d / 2 + 1.5 + c * (d - 3) / 6;
-        if (armCols && armCols.includes(c) && s >= 1 && s <= 3) {      // robot-served slot: kept free, tray rails for the fork
+        if ((armCols && armCols.includes(c) && s >= 1 && s <= 3) || (freeSlots && freeSlots.some(f => f[0] === s && f[1] === c))) {      // robot-served slot: kept free, tray rails
           for (const rz of [-0.27, 0.27]) { const rl = this._box(1.4, 0.04, 0.07, railM); rl.position.set(0, 0.55 + s * 0.64, cz + rz); g.add(rl); }
           continue;
         }
@@ -21603,7 +21606,7 @@ class Component extends DCLogic {
     ];
     const humZone = ['Prep & Assembly', 'Prep & Assembly', 'Decontam', 'Decontam', 'Washer bank', 'Soiled receiving'];
     hps.forEach((p, i) => {
-      const h = this._humanoid();
+      const h = this._humanoid(['soft', 'soft', 'sealed', 'sealed', 'gp', 'gp'][i], 0x22d3ee);
       h.position.set(p.x, 0, p.z); h.rotation.y = p.ry;
       D.add(h);
       this._anim.humans.push({ obj: h, phase: i * 1.3 });
@@ -22811,37 +22814,8 @@ class Component extends DCLogic {
     // arms (frozen while paused — hold pose)
     this._updateArmCells(dt * mv);
 
-    // humanoids subtle motion (frozen while paused)
-    if (this._playing) this._anim.humans.forEach(h => {
-      const u = h.obj.userData; const ph = t * 1.2 + h.phase;
-      if (u.armR) { u.armR.sh.rotation.x = -0.3 + Math.sin(ph) * 0.25; u.armR.el.rotation.x = 0.4 + Math.cos(ph) * 0.2; }
-      if (u.armL) { u.armL.sh.rotation.x = -0.3 + Math.sin(ph + 1) * 0.2; }
-      h.obj.position.y = Math.sin(ph * 0.5) * 0.02;
-    });
-
-    // galbot mobile manipulators — dual-arm reaching + head scan (frozen while paused)
-    if (this._playing) this._anim.galbots.forEach(gb => {
-      const u = gb.obj.userData; const ph = t * 0.9 * this._speed + gb.phase;
-      if (u.armR) { u.armR.sh.rotation.x = 0.5 + Math.sin(ph) * 0.32; u.armR.el.rotation.x = 0.7 + Math.cos(ph * 1.1) * 0.3; u.armR.wr.rotation.x = Math.sin(ph * 1.4) * 0.25; }
-      if (u.armL) { u.armL.sh.rotation.x = 0.5 + Math.sin(ph + 1.6) * 0.3; u.armL.el.rotation.x = 0.7 + Math.cos(ph * 1.1 + 1.6) * 0.28; }
-      if (u.head) u.head.rotation.y = Math.sin(ph * 0.5) * 0.4;
-    });
-    // wheeled humanoids — reach cycles, head scan, spine breathing; WH-04 runs the corridor
-    (this._anim.vegas || []).forEach(v => {
-      const u = v.obj.userData; const ph = t * 0.85 * this._speed + v.phase;
-      if (this._playing) {
-        if (u.armR) { u.armR.sh.rotation.x = 0.55 + Math.sin(ph) * 0.34; u.armR.el.rotation.x = 0.75 + Math.cos(ph * 1.15) * 0.3; u.armR.wr.rotation.x = Math.sin(ph * 1.5) * 0.2; }
-        if (u.armL) { u.armL.sh.rotation.x = 0.55 + Math.cos(ph * 0.9) * 0.34; u.armL.el.rotation.x = 0.75 + Math.sin(ph * 1.25) * 0.3; u.armL.wr.rotation.x = Math.cos(ph * 1.35) * 0.2; }
-        if (u.head) u.head.rotation.y = Math.sin(ph * 0.5) * 0.45;
-        if (u.lift) u.lift.position.y = 0.72 + Math.sin(ph * 0.45) * 0.05;
-      }
-      if (v.curve) {
-        v.u = (v.u + dt * v.spd * mv) % 1;
-        const p = v.curve.getPointAt(v.u), q = v.curve.getPointAt((v.u + 0.008) % 1);
-        v.obj.position.set(p.x, 0, p.z);
-        v.obj.rotation.y = Math.atan2(q.x - p.x, q.z - p.z);
-      }
-    });
+    // humanoid workforce: job controllers (walk, reach, carry) — frozen while paused
+    this._updateCrew(dt * mv);
     // digital twin — replay clock drives ghost fleet, playhead dial, forecast sweep, bottleneck pulse
     if (this._twin) {
       const tw = this._twin;
@@ -23397,7 +23371,7 @@ class Component extends DCLogic {
       mmPerim, mmZones, mmPortalX,
       schedHours, schedRows, schedNowPct,
 
-      kpi: { fleetActive: 29, clock: this._now() },
+      kpi: { fleetActive: 30, clock: this._now() },
       navHints: [
         { label: 'Orbit', key: 'Drag' }, { label: 'Pan', key: 'Right-drag' }, { label: 'Zoom', key: 'Scroll' }
       ],
@@ -23803,8 +23777,18 @@ class Component extends DCLogic {
     });
     if (this._beltRiders) {
       for (let i = this._beltRiders.length - 1; i >= 0; i--) {
-        const r = this._beltRiders[i]; r.obj.position.x += dt * 0.9;
-        if (r.obj.parent.position.x + r.obj.position.x > r.endX) { r.obj.visible = false; r.cell.pool.push(r.obj); this._beltRiders.splice(i, 1); }
+        const r = this._beltRiders[i], d = r.dir || [1, 0];
+        r.obj.position.x += dt * 0.9 * d[0]; r.obj.position.z += dt * 0.9 * d[1];
+        const wx = r.obj.parent.position.x + r.obj.position.x, wz = r.obj.parent.position.z + r.obj.position.z;
+        const pk = this._pickup;
+        if (!r.dir && pk && pk.want && !pk.tray && wx >= pk.x) {                     // tote runner catches it at the belt end
+          r.obj.position.x = pk.x - r.obj.parent.position.x; pk.tray = r.obj; pk.cell = r.cell; this._beltRiders.splice(i, 1); continue;
+        }
+        const along = wx * d[0] + wz * d[1], end = r.dir ? r.end : r.endX;
+        if (along > end) {
+          this._beltRiders.splice(i, 1);
+          if (r.done) { r.obj.visible = false; r.done(r); } else { r.obj.visible = false; r.cell.pool.push(r.obj); }
+        }
       }
     }
   }
@@ -23988,139 +23972,705 @@ class Component extends DCLogic {
       if (ai) cell.queue = [{ dur: 2.6 }];                                              // stagger the two arms
     });
   }
-  // ---------- bipedal humanoid ----------
-  _humanoid() {
-    const g = new THREE.Group();
-    const shell = this._rawmat(0xeef1f4, 0.38, 0.2), joint = this._rawmat(0x3a4049, 0.45, 0.5), visor = this._led(0x22d3ee, 0.8), dark = this._rawmat(0x22262c, 0.5, 0.3);
-    const pelvis = this._rbox(0.6, 0.36, 0.4, 0.16, joint); pelvis.position.y = 1.02; g.add(pelvis);
-    const torso = this._rbox(0.78, 0.92, 0.5, 0.22, shell); torso.position.y = 1.62; torso.castShadow = true; g.add(torso);
-    const chest = this._rbox(0.46, 0.26, 0.05, 0.08, visor); chest.position.set(0, 1.72, 0.26); g.add(chest);
-    this._anim.pulsers.push({ mat: chest.material, base: 0.7, amp: 0.4, spd: 1.4 });
-    const neck = this._cyl(0.1, 0.11, 0.16, joint, 14); neck.position.y = 2.16; g.add(neck);
-    const head = this._rbox(0.42, 0.44, 0.42, 0.18, shell); head.position.y = 2.42; head.castShadow = true; g.add(head);
-    const face = this._rbox(0.3, 0.14, 0.05, 0.06, visor); face.position.set(0, 2.46, 0.21); g.add(face);
-    const mkArm = (sx) => {
-      const sh = new THREE.Group(); sh.position.set(sx, 2.0, 0); g.add(sh);
-      sh.add(this._sph(0.13, joint));
-      const upper = this._capsule(0.1, 0.44, shell, 14); upper.position.y = -0.32; sh.add(upper);
-      const el = new THREE.Group(); el.position.y = -0.62; sh.add(el);
-      el.add(this._sph(0.1, joint));
-      const fore = this._capsule(0.085, 0.4, shell, 14); fore.position.y = -0.3; el.add(fore);
-      const hand = this._softHand(dark, dark, true); hand.position.y = -0.52; hand.scale.setScalar(1.15); el.add(hand);
-      return { sh, el };
-    };
-    const aL = mkArm(-0.52), aR = mkArm(0.52);
-    for (const sx of [-0.22, 0.22]) {
-      const hip = this._sph(0.15, joint); hip.position.set(sx, 0.92, 0); g.add(hip);
-      const thigh = this._capsule(0.13, 0.36, joint, 14); thigh.position.set(sx, 0.7, 0); g.add(thigh);
-      const knee = this._sph(0.12, shell); knee.position.set(sx, 0.5, 0.02); g.add(knee);
-      const shin = this._capsule(0.11, 0.3, joint, 14); shin.position.set(sx, 0.3, 0); g.add(shin);
-      const foot = this._rbox(0.3, 0.14, 0.52, 0.09, shell); foot.position.set(sx, 0.08, 0.12); g.add(foot);
+  // ================= HUMANOID WORKFORCE: rigs =================
+  // Original designs informed by current humanoids (2025-26): ~1.75-1.8 m bipeds with all-electric joints,
+  // slim forearm-actuated hands, an optional washable soft-goods covering, a sealed wet-area build,
+  // a reverse-knee tote runner, and wheeled humanoids with telescoping torsos. Scene scale ≈ 1.55 u per metre.
+  _knitTex() {
+    if (this._knit) return this._knit;
+    const c = document.createElement('canvas'); c.width = c.height = 128; const x = c.getContext('2d');
+    x.fillStyle = '#808080'; x.fillRect(0, 0, 128, 128);
+    for (let r = 0; r < 128; r += 4) for (let q = 0; q < 128; q += 4) {
+      const v = Math.round(120 + (((r >> 2) + (q >> 2)) % 2 ? 26 : -12) + Math.random() * 14);
+      x.fillStyle = `rgb(${v},${v},${v})`; x.fillRect(q, r, 4, 3);
     }
-    g.userData = { armL: aL, armR: aR };
-    return g;
+    const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(4, 4); this._knit = t; return t;
   }
-
-  // ---------- Vega-class wheeled humanoid (telescoping spine, dual arms, dexterous hands) ----------
-  _vega(accent) {
-    const g = new THREE.Group();
-    const shell = this._rawmat(0xf2f4f6, 0.34, 0.16), shell2 = this._rawmat(0xdfe3e8, 0.4, 0.14), dark = this._rawmat(0x1f2328, 0.5, 0.3), joint = this._rawmat(0x3a4049, 0.45, 0.5), tire = this._rawmat(0x15181c, 0.85, 0.05);
-    const acc = this._led(accent, 0.85);
-    const chassis = this._rbox(1.5, 0.26, 1.05, 0.3, dark); chassis.position.y = 0.26; g.add(chassis);
-    const deck = this._rbox(1.62, 0.34, 1.16, 0.36, shell); deck.position.y = 0.56; deck.castShadow = true; g.add(deck);
-    const deckTop = this._rbox(1.3, 0.08, 0.92, 0.26, shell2); deckTop.position.y = 0.77; g.add(deckTop);
-    for (const sx of [-0.74, 0.74]) { const w = this._wheel(0.26, 0.14, tire); w.position.set(sx, 0.26, 0.1); g.add(w); }
-    for (const c of [[-0.5, -0.42], [0.5, -0.42], [-0.5, 0.44], [0.5, 0.44]]) { const cw = this._cyl(0.09, 0.09, 0.07, tire, 12); cw.rotation.z = Math.PI / 2; cw.position.set(c[0], 0.09, c[1]); g.add(cw); }
-    const eStrip = this._rbox(0.7, 0.06, 0.05, 0.025, acc); eStrip.position.set(0, 0.62, 0.61); g.add(eStrip);
-    this._anim.pulsers.push({ mat: eStrip.material, base: 0.9, amp: 0.4, spd: 2.0 });
-    const dome = this._sph(0.09, this._rawmat(0x0c1018, 0.2, 0.6)); dome.position.set(-0.45, 0.82, 0.3); g.add(dome);
-    const estop = this._cyl(0.05, 0.05, 0.05, this._rawmat(0xc0392b, 0.5, 0.1), 10); estop.position.set(0.55, 0.8, -0.35); g.add(estop);
-    // telescoping spine: two nested rounded columns leaning slightly forward
-    const spine = new THREE.Group(); spine.position.set(0, 0.72, -0.18); spine.rotation.x = 0.12; g.add(spine);
-    const strip = this._rbox(0.18, 1.6, 0.08, 0.04, dark); strip.position.set(0, 0.8, 0.12); spine.add(strip);
-    const segLo = this._rbox(0.42, 0.9, 0.36, 0.14, shell); segLo.position.set(0, 0.42, -0.08); segLo.castShadow = true; spine.add(segLo);
-    const segHi = this._rbox(0.34, 0.8, 0.28, 0.12, shell2); segHi.position.set(0, 1.16, -0.04); spine.add(segHi);
-    const chest = new THREE.Group(); chest.position.set(0, 1.66, 0.06); chest.rotation.x = -0.12; spine.add(chest);
-    const torso = this._rbox(0.9, 0.6, 0.42, 0.2, shell); torso.position.y = 0.26; torso.castShadow = true; chest.add(torso);
-    const sternum = this._rbox(0.34, 0.38, 0.05, 0.08, dark); sternum.position.set(0, 0.24, 0.22); chest.add(sternum);
-    const badge = this._rbox(0.16, 0.05, 0.02, 0.01, acc); badge.position.set(0, 0.4, 0.245); chest.add(badge);
-    this._anim.pulsers.push({ mat: badge.material, base: 0.9, amp: 0.5, spd: 1.5 });
-    const head = new THREE.Group(); head.position.set(0, 0.72, 0.02); chest.add(head);
-    const neck = this._cyl(0.09, 0.11, 0.18, joint, 14); neck.position.y = -0.14; head.add(neck);
-    const skull = this._rbox(0.52, 0.28, 0.36, 0.13, shell); skull.castShadow = true; head.add(skull);
-    const visor = this._rbox(0.46, 0.14, 0.06, 0.05, this._rawmat(0x0c1018, 0.2, 0.6)); visor.position.set(0, -0.01, 0.17); head.add(visor);
-    for (const sx of [-0.12, 0.12]) { const cam = this._cyl(0.03, 0.03, 0.03, acc, 10); cam.rotation.x = Math.PI / 2; cam.position.set(sx, 0, 0.21); head.add(cam); }
-    const crown = this._rbox(0.3, 0.06, 0.2, 0.03, dark); crown.position.set(0, 0.17, 0.06); head.add(crown);
-    const mkArm = (sx) => {
-      const sh = new THREE.Group(); sh.position.set(sx, 0.42, 0.04); chest.add(sh);
-      sh.add(this._sph(0.14, shell2));
-      const upper = this._capsule(0.1, 0.4, shell, 14); upper.position.y = -0.3; sh.add(upper);
-      const el = new THREE.Group(); el.position.y = -0.58; sh.add(el);
-      el.add(this._sph(0.1, joint));
-      const fore = this._capsule(0.082, 0.38, shell, 14); fore.position.y = -0.29; el.add(fore);
-      const band = this._cyl(0.09, 0.09, 0.05, acc, 12); band.position.y = -0.54; el.add(band);
-      const wr = new THREE.Group(); wr.position.y = -0.58; el.add(wr);
-      const hand = this._softHand(dark, dark, false); wr.add(hand);
-      sh.rotation.x = 0.55; el.rotation.x = 0.75;
-      return { sh, el, wr };
-    };
-    const aL = mkArm(-0.56), aR = mkArm(0.56);
-    g.userData = { armL: aL, armR: aR, head: head, lift: spine, kind: 'vega' };
-    return g;
+  _humMats(style, accent) {
+    const T = THREE, raw = (c, r, m) => this._rawmat(c, r, m);
+    const knit = (c) => new T.MeshStandardMaterial({ color: c, roughness: 0.96, metalness: 0, bumpMap: this._knitTex(), bumpScale: 0.012 });
+    const acc = this._led(accent || 0x22d3ee, 0.9);
+    const base = { joint: raw(0x2b2f36, 0.45, 0.4), dark: raw(0x1d2025, 0.55, 0.3), visor: raw(0x0a0c0f, 0.12, 0.6), rubber: raw(0x15181c, 0.85, 0.02), alu: raw(0xc4cbd3, 0.32, 0.6), acc };
+    if (style === 'soft') return Object.assign(base, { shell: knit(0xcdc5b8), shell2: knit(0xb7afa3), trim: raw(0xe9e6e0, 0.4, 0.05) });
+    if (style === 'sealed') return Object.assign(base, { shell: raw(0xdfe5eb, 0.26, 0.08), shell2: raw(0x5b6977, 0.38, 0.25), trim: raw(0xeef2f5, 0.3, 0.05), joint: raw(0x343d47, 0.75, 0.05) });
+    if (style === 'bird') return Object.assign(base, { shell: raw(0xe6e4df, 0.34, 0.06), shell2: raw(0x6f7c88, 0.4, 0.3), trim: raw(0xf3f2ef, 0.3, 0.05) });
+    if (style === 'galbot') return Object.assign(base, { shell: raw(0xf0f2f5, 0.32, 0.06), shell2: raw(0xd9dee4, 0.4, 0.08), trim: raw(0xffffff, 0.3, 0.05) });
+    if (style === 'vega') return Object.assign(base, { shell: raw(0xf2f4f6, 0.32, 0.06), shell2: raw(0xd6dbe1, 0.4, 0.1), trim: raw(0xffffff, 0.3, 0.05) });
+    return Object.assign(base, { shell: raw(0xf1f2f4, 0.3, 0.05), shell2: raw(0xdcdfe3, 0.38, 0.08), trim: raw(0xffffff, 0.3, 0.05) });   // 'gp'
   }
+  _humDims(style) {
+    const d = { thigh: 0.66, shin: 0.64, ankleH: 0.11, hipX: 0.15, stand: 1.38, shX: 0.31, shY: 0.66, neckY: 0.78, upper: 0.5, fore: 0.42, grasp: 0.13, footL: 0.38, bird: false };
+    if (style === 'bird') Object.assign(d, { thigh: 0.6, shin: 0.74, ankleH: 0.07, stand: 1.36, shY: 0.56, neckY: 0.64, upper: 0.47, fore: 0.4, footL: 0.3, bird: true });
+    if (style === 'vega' || style === 'galbot') Object.assign(d, { shX: 0.36, shY: 0.5, neckY: 0.66, upper: 0.62, fore: 0.56, grasp: 0.14 });
+    return d;
+  }
+  // tapered limb along -Y (0..-len), radius r0 at the top, r1 at the bottom
+  _limb(r0, r1, len, m, seg) {
+    const pts = [new THREE.Vector2(0, 0), new THREE.Vector2(r0 * 0.92, 0), new THREE.Vector2(r0, -len * 0.08), new THREE.Vector2((r0 + r1) / 2 * 1.02, -len * 0.5), new THREE.Vector2(r1, -len * 0.92), new THREE.Vector2(r1 * 0.9, -len), new THREE.Vector2(0, -len)];
+    const o = new THREE.Mesh(new THREE.LatheGeometry(pts, seg || 28), m); o.castShadow = true; return o;
+  }
+  _bellows(parent, r, y, n, m) { for (let i = 0; i < n; i++) { const t = new THREE.Mesh(new THREE.TorusGeometry(r, r * 0.16, 8, 28), m); t.rotation.x = Math.PI / 2; t.position.y = y - i * r * 0.32; parent.add(t); } }
 
-  // ---------- Galbot G1-class mobile manipulator ----------
-  _galbot(accent) {
-    const g = new THREE.Group();
-    const shell = this._rawmat(0xeff2f5, 0.34, 0.16), shell2 = this._rawmat(0xdde1e6, 0.4, 0.14), joint = this._rawmat(0x3a4049, 0.45, 0.5), dark = this._rawmat(0x1f2328, 0.5, 0.3), tire = this._rawmat(0x15181c, 0.85, 0.05);
-    const acc = this._led(accent, 0.85);
-    // circular omnidirectional base with a soft lathe profile
-    const prof = [new THREE.Vector2(0.62, 0), new THREE.Vector2(0.78, 0.12), new THREE.Vector2(0.8, 0.3), new THREE.Vector2(0.74, 0.46), new THREE.Vector2(0.56, 0.56), new THREE.Vector2(0, 0.58)];
-    const base = new THREE.Mesh(new THREE.LatheGeometry(prof, 40), shell2); base.castShadow = true; g.add(base);
-    const baseBand = this._cyl(0.79, 0.79, 0.06, dark, 40); baseBand.position.y = 0.2; g.add(baseBand);
-    const baseTrim = new THREE.Mesh(new THREE.TorusGeometry(0.76, 0.03, 10, 48), acc); baseTrim.rotation.x = Math.PI / 2; baseTrim.position.y = 0.12; g.add(baseTrim);
-    for (let i = 0; i < 3; i++) { const a = i * Math.PI * 2 / 3; const w = this._cyl(0.12, 0.12, 0.09, tire, 14); w.rotation.z = Math.PI / 2; w.rotation.y = a; w.position.set(Math.cos(a) * 0.52, 0.12, Math.sin(a) * 0.52); g.add(w); }
-    const lidar = this._cyl(0.1, 0.11, 0.1, dark, 18); lidar.position.set(0, 0.62, 0.5); g.add(lidar);
-    // single lifting column (telescoping)
-    const col = this._cyl(0.2, 0.24, 1.5, dark, 24); col.position.y = 1.32; g.add(col);
-    const colShell = this._capsule(0.27, 1.0, shell, 24); colShell.position.y = 1.22; g.add(colShell);
-    // shoulder yoke + chest display
-    const yoke = this._rbox(0.88, 0.42, 0.48, 0.18, shell); yoke.position.y = 2.18; yoke.castShadow = true; g.add(yoke);
-    const screen = this._rbox(0.34, 0.22, 0.03, 0.04, this._rawmat(0x0f1318, 0.2, 0.5)); screen.position.set(0, 2.14, 0.25); g.add(screen);
-    const yokeAcc = this._rbox(0.5, 0.06, 0.03, 0.02, acc); yokeAcc.position.set(0, 2.32, 0.25); g.add(yokeAcc);
-    this._anim.pulsers.push({ mat: yokeAcc.material, base: 0.9, amp: 0.5, spd: 1.6 });
-    // head: dome with binocular visor
-    const neck = this._cyl(0.1, 0.12, 0.12, joint, 14); neck.position.y = 2.46; g.add(neck);
-    const head = this._sph(0.27, shell, 1, 0.92, 1); head.position.y = 2.66; g.add(head);
-    const visor = new THREE.Mesh(new THREE.SphereGeometry(0.226, 20, 12, 0, Math.PI * 2, Math.PI * 0.3, Math.PI * 0.36), this._rawmat(0x0c1018, 0.2, 0.6)); visor.position.set(0, 2.66, 0.06); g.add(visor);
-    for (const sx of [-0.08, 0.08]) { const eye = this._cyl(0.025, 0.025, 0.02, acc, 10); eye.rotation.x = Math.PI / 2; eye.position.set(sx, 2.7, 0.27); g.add(eye); }
-    const led = this._cyl(0.03, 0.03, 0.03, acc, 10); led.rotation.x = Math.PI / 2; led.position.set(0.17, 2.78, 0.17); g.add(led);
-    this._anim.pulsers.push({ mat: led.material, base: 1.2, amp: 0.6, spd: 2.4 });
-    // dual 7-DOF arms: suction cup on the left, parallel gripper on the right
-    const mkArm = (sx, tool) => {
-      const sh = new THREE.Group(); sh.position.set(sx, 2.12, 0.05); g.add(sh);
-      sh.add(this._sph(0.13, joint));
-      const upper = this._capsule(0.09, 0.34, shell, 14); upper.position.y = -0.27; sh.add(upper);
-      const el = new THREE.Group(); el.position.y = -0.52; sh.add(el);
-      el.add(this._sph(0.1, joint));
-      const fore = this._capsule(0.075, 0.32, shell, 14); fore.position.y = -0.26; el.add(fore);
-      const wr = new THREE.Group(); wr.position.y = -0.5; el.add(wr);
-      wr.add(this._sph(0.075, joint));
-      if (tool === 'suction') {
-        const stem = this._cyl(0.035, 0.035, 0.16, joint, 10); stem.position.y = -0.1; wr.add(stem);
-        const cup = this._cyl(0.02, 0.085, 0.07, dark, 16); cup.position.y = -0.22; wr.add(cup);
-        const lip = new THREE.Mesh(new THREE.TorusGeometry(0.08, 0.015, 8, 20), dark); lip.rotation.x = Math.PI / 2; lip.position.y = -0.255; wr.add(lip);
-      } else {
-        const palm = this._rbox(0.14, 0.1, 0.12, 0.03, joint); palm.position.y = -0.1; wr.add(palm);
-        for (const fx of [-0.05, 0.05]) { const f = this._rbox(0.03, 0.14, 0.05, 0.012, shell2); f.position.set(fx, -0.22, 0); wr.add(f); const pad = this._rbox(0.012, 0.08, 0.04, 0.005, dark); pad.position.set(fx - Math.sign(fx) * 0.02, -0.24, 0); wr.add(pad); }
-        const tip = this._cyl(0.02, 0.02, 0.04, acc, 8); tip.position.y = -0.3; wr.add(tip);
+  // five-finger hand (fingers along -Y, palm faces +Z; thumb on the +X side for the left hand)
+  _humHand(sd, M, kind, s) {
+    const T = THREE, g = new T.Group(); s = s || 1;
+    const fingers = [];
+    if (kind === 'paddle') {                                                       // reverse-knee runner: two-finger tote paddles
+      const palm = this._rbox(0.12 * s, 0.1 * s, 0.06 * s, 0.02, M.shell2); palm.position.y = -0.05 * s; g.add(palm);
+      for (const fx of [-1, 1]) {
+        const f = new T.Group(); f.position.set(0, -0.1 * s, fx * 0.02 * s); g.add(f);
+        const p = this._rbox(0.11 * s, 0.13 * s, 0.025 * s, 0.01, M.joint); p.position.y = -0.065 * s; f.add(p);
+        const pad = this._rbox(0.1 * s, 0.07 * s, 0.008, 0.004, M.rubber); pad.position.set(0, -0.09 * s, -fx * 0.016 * s); f.add(pad);
+        fingers.push({ segs: [f], sign: fx, paddle: true });
       }
-      sh.rotation.x = 0.5; el.rotation.x = 0.7;
-      return { sh, el, wr };
+      return { g, fingers, set: (gr) => fingers.forEach(f => { f.segs[0].rotation.x = -f.sign * gr * 0.35; }) };
+    }
+    const palm = this._rbox(0.1 * s, 0.13 * s, 0.046 * s, 0.018 * s, M.dark); palm.position.y = -0.07 * s; palm.castShadow = true; g.add(palm);
+    const back = this._rbox(0.092 * s, 0.1 * s, 0.012 * s, 0.006, M.trim); back.position.set(0, -0.065 * s, -0.026 * s); g.add(back);
+    const lens = [[0.05, 0.034, 0.028], [0.056, 0.038, 0.03], [0.053, 0.036, 0.029], [0.044, 0.03, 0.025]];
+    [-0.036, -0.012, 0.012, 0.036].forEach((fx, i) => {
+      let par = g, y0 = -0.14 * s; const segs = [];
+      lens[i].forEach((L, k) => {
+        const j = new T.Group(); j.position.set(k ? 0 : fx * s * sd, k ? -lens[i][k - 1] * s : y0, 0); par.add(j);
+        const b = this._rbox(0.021 * s, L * s, 0.024 * s, 0.009 * s, k === 2 ? M.rubber : M.joint); b.position.y = -L * s / 2; j.add(b);
+        segs.push(j); par = j;
+      });
+      fingers.push({ segs });
+    });
+    // opposable thumb
+    const th = new T.Group(); th.position.set(sd * 0.05 * s, -0.045 * s, 0.018 * s); th.rotation.set(0.5, 0, -sd * 0.7); g.add(th);
+    let par = th; const tsegs = [];
+    [0.04, 0.033, 0.026].forEach((L, k) => { const j = new T.Group(); j.position.y = k ? -[0.04, 0.033][k - 1] * s : 0; par.add(j); const b = this._rbox(0.023 * s, L * s, 0.024 * s, 0.009 * s, k === 2 ? M.rubber : M.joint); b.position.y = -L * s / 2; j.add(b); tsegs.push(j); par = j; });
+    const set = (gr) => {
+      fingers.forEach((f, i) => { f.segs[0].rotation.x = -(0.15 + gr * 1.05); f.segs[1].rotation.x = -(0.2 + gr * 1.0); f.segs[2].rotation.x = -(0.12 + gr * 0.7); });
+      tsegs[1].rotation.x = -(0.1 + gr * 0.6); tsegs[2].rotation.x = -(0.1 + gr * 0.5);
     };
-    const aL = mkArm(-0.44, 'suction'), aR = mkArm(0.44, 'gripper');
-    g.userData = { armL: aL, armR: aR, head: head, base: 'galbot' };
-    return g;
+    set(0.2);
+    return { g, fingers, set };
+  }
+
+  _humArm(parent, sd, D, M, style) {
+    const T = THREE, S = new T.Group(); S.position.set(sd * D.shX, D.shY, 0); parent.add(S);
+    const big = style === 'vega' || style === 'galbot';
+    const sAct = this._roundCyl(big ? 0.1 : 0.088, 0.17, 0.03, M.joint, 32); sAct.rotation.z = Math.PI / 2; S.add(sAct);
+    const cap = this._roundCyl(big ? 0.105 : 0.092, 0.06, 0.02, M.shell, 32); cap.rotation.z = Math.PI / 2; cap.position.x = sd * 0.1; S.add(cap);
+    S.add(this._limb(big ? 0.082 : 0.075, big ? 0.064 : 0.058, D.upper, M.shell));
+    if (style === 'soft') { const sl = this._limb(0.083, 0.066, D.upper * 0.7, M.shell2); sl.position.y = -0.04; S.add(sl); }
+    const E = new T.Group(); E.position.y = -D.upper; S.add(E);
+    const eAct = this._roundCyl(big ? 0.075 : 0.066, 0.13, 0.025, M.joint, 28); eAct.rotation.z = Math.PI / 2; E.add(eAct);
+    if (style === 'sealed') this._bellows(E, 0.066, 0.03, 3, M.joint);
+    // forearm: fuller near the elbow where the finger actuators live, slim at the wrist
+    E.add(this._limb(big ? 0.074 : 0.066, big ? 0.05 : 0.044, D.fore, M.shell));
+    const stripe = this._rbox(0.012, D.fore * 0.45, 0.03, 0.005, M.acc); stripe.position.set(sd * 0.064, -D.fore * 0.35, 0); E.add(stripe);
+    const W = new T.Group(); W.position.y = -D.fore; E.add(W);
+    const cuff = this._roundCyl(0.046, 0.04, 0.012, M.joint, 24); cuff.position.y = -0.01; W.add(cuff);
+    const hand = this._humHand(sd, M, style === 'bird' ? 'paddle' : 'five', big ? 1.15 : 1);
+    hand.g.position.y = -0.03; W.add(hand.g);
+    return { S, E, W, hand, sd, L1: D.upper, L2: D.fore };
+  }
+
+  _humLeg(pelvis, sd, D, M, style) {
+    const T = THREE, H = new T.Group(); H.position.set(sd * D.hipX, -0.04, 0); pelvis.add(H);
+    const hAct = this._roundCyl(0.1, 0.17, 0.03, M.joint, 32); hAct.rotation.z = Math.PI / 2; H.add(hAct);
+    H.add(this._limb(0.1, 0.075, D.thigh, M.shell, 30));
+    const tc = this._rbox(0.14, D.thigh * 0.55, 0.06, 0.03, M.shell2); tc.position.set(0, -D.thigh * 0.42, 0.075); H.add(tc);
+    const K = new T.Group(); K.position.y = -D.thigh; H.add(K);
+    const kAct = this._roundCyl(0.082, 0.15, 0.025, M.joint, 28); kAct.rotation.z = Math.PI / 2; K.add(kAct);
+    if (style === 'sealed') this._bellows(K, 0.08, 0.04, 3, M.joint);
+    K.add(this._limb(0.078, 0.052, D.shin, M.shell, 28));
+    const calf = this._rbox(0.12, D.shin * 0.5, 0.07, 0.03, M.shell2); calf.position.set(0, -D.shin * 0.3, D.bird ? 0.07 : -0.06); K.add(calf);
+    const A = new T.Group(); A.position.y = -D.shin; K.add(A);
+    const aAct = this._roundCyl(0.05, 0.11, 0.015, M.joint, 24); aAct.rotation.z = Math.PI / 2; A.add(aAct);
+    const foot = new T.Group(); A.add(foot);
+    const fl = D.footL;
+    const sole = this._rbox(0.15, 0.035, fl, 0.05, M.rubber); sole.position.set(0, -D.ankleH + 0.0175, fl * 0.2); foot.add(sole);
+    const upperF = this._rbox(0.13, D.ankleH - 0.03, fl * 0.78, 0.045, M.shell2); upperF.position.set(0, -D.ankleH / 2 + 0.015, fl * 0.14); upperF.castShadow = true; foot.add(upperF);
+    return { H, K, A, foot, sd, L1: D.thigh, L2: D.shin };
+  }
+
+  // torso, arms and head shared by every humanoid
+  _humUpper(waist, style, D, M) {
+    const T = THREE;
+    const big = style === 'vega' || style === 'galbot';
+    const abd = this._rbox(big ? 0.4 : 0.34, 0.26, big ? 0.28 : 0.24, 0.1, style === 'soft' ? M.shell2 : M.joint); abd.position.y = 0.16; waist.add(abd);
+    const chest = this._rbox(big ? 0.62 : 0.54, 0.42, big ? 0.36 : 0.31, 0.13, M.shell); chest.position.y = 0.47; chest.castShadow = true; waist.add(chest);
+    const yoke = this._rbox(big ? 0.78 : 0.68, 0.12, big ? 0.3 : 0.26, 0.06, M.shell2); yoke.position.y = D.shY + 0.01; waist.add(yoke);
+    const pack = this._rbox(0.36, 0.42, 0.1, 0.04, M.shell2); pack.position.set(0, 0.45, -(big ? 0.21 : 0.19)); waist.add(pack);
+    const vent = this._rbox(0.24, 0.025, 0.012, 0.006, M.dark); for (let i = 0; i < 4; i++) { const v = vent.clone(); v.position.set(0, 0.33 + i * 0.05, -(big ? 0.265 : 0.245)); waist.add(v); }
+    const fz = big ? 0.181 : 0.156;
+    if (style === 'soft') { const seam = this._rbox(0.012, 0.36, 0.006, 0.003, M.trim); seam.position.set(0, 0.45, fz + 0.004); waist.add(seam); }
+    else if (style === 'sealed') { const plate = this._rbox(0.36, 0.22, 0.02, 0.05, M.shell2); plate.position.set(0, 0.5, fz + 0.006); waist.add(plate); }
+    const strip = this._rbox(style === 'bird' ? 0.18 : 0.22, 0.022, 0.01, 0.006, M.acc); strip.position.set(0, 0.62, fz + 0.01); waist.add(strip);
+    this._anim.pulsers.push({ mat: M.acc, base: 0.9, amp: 0.3, spd: 1.4 + Math.random() * 0.4 });
+    const arms = { L: this._humArm(waist, 1, D, M, style), R: this._humArm(waist, -1, D, M, style) };
+    const neck = new T.Group(); neck.position.y = D.neckY; waist.add(neck);
+    const nk = this._roundCyl(0.058, 0.12, 0.02, M.joint, 24); nk.position.y = 0.02; neck.add(nk);
+    const head = new T.Group(); head.position.y = 0.1; neck.add(head);
+    if (style === 'soft') {
+      const skull = this._sph(0.15, M.trim, 0.92, 1.12, 1.0); skull.position.y = 0.12; head.add(skull);
+      const face = new T.Mesh(new T.SphereGeometry(0.152, 28, 18, -0.75, 1.5, 0.95, 0.9), M.visor); face.position.y = 0.12; face.scale.set(0.92, 1.12, 1.0); head.add(face);
+      for (const ex of [-0.045, 0.045]) { const e = this._rbox(0.034, 0.012, 0.01, 0.004, M.acc); e.position.set(ex, 0.13, 0.15); head.add(e); }
+    } else if (style === 'sealed') {
+      const skull = this._rbox(0.27, 0.27, 0.29, 0.1, M.shell); skull.position.y = 0.12; skull.castShadow = true; head.add(skull);
+      const bar = this._rbox(0.25, 0.06, 0.03, 0.02, M.visor); bar.position.set(0, 0.14, 0.145); head.add(bar);
+      const led = this._rbox(0.14, 0.012, 0.006, 0.003, M.acc); led.position.set(0, 0.14, 0.161); head.add(led);
+      const crest = this._rbox(0.06, 0.03, 0.22, 0.012, M.shell2); crest.position.set(0, 0.265, 0); head.add(crest);
+    } else if (style === 'bird') {
+      const skull = this._rbox(0.3, 0.16, 0.22, 0.06, M.shell); skull.position.y = 0.07; head.add(skull);
+      for (const ex of [-0.07, 0.07]) { const cam = this._cyl(0.026, 0.026, 0.02, M.visor, 16); cam.rotation.x = Math.PI / 2; cam.position.set(ex, 0.08, 0.115); head.add(cam); }
+      const led = this._rbox(0.2, 0.012, 0.006, 0.003, M.acc); led.position.set(0, 0.025, 0.112); head.add(led);
+    } else if (style === 'galbot') {
+      const skull = this._sph(0.2, M.shell, 1, 0.9, 1); skull.position.y = 0.16; head.add(skull);
+      const vis = new T.Mesh(new T.SphereGeometry(0.202, 28, 14, -0.9, 1.8, 1.05, 0.7), M.visor); vis.scale.set(1, 0.9, 1); vis.position.y = 0.16; head.add(vis);
+      for (const ex of [-0.06, 0.06]) { const e = this._cyl(0.018, 0.018, 0.012, M.acc, 12); e.rotation.x = Math.PI / 2; e.position.set(ex, 0.17, 0.196); head.add(e); }
+    } else if (style === 'vega') {
+      const skull = this._rbox(0.4, 0.22, 0.28, 0.1, M.shell); skull.position.y = 0.12; skull.castShadow = true; head.add(skull);
+      const vis = this._rbox(0.34, 0.1, 0.03, 0.04, M.visor); vis.position.set(0, 0.12, 0.14); head.add(vis);
+      for (const ex of [-0.09, 0.09]) { const e = this._cyl(0.022, 0.022, 0.012, M.acc, 12); e.rotation.x = Math.PI / 2; e.position.set(ex, 0.12, 0.158); head.add(e); }
+    } else {
+      const skull = this._rbox(0.25, 0.3, 0.27, 0.11, M.shell); skull.position.y = 0.13; skull.castShadow = true; head.add(skull);
+      const vis = this._rbox(0.22, 0.13, 0.03, 0.05, M.visor); vis.position.set(0, 0.14, 0.135); head.add(vis);
+      const led = this._rbox(0.12, 0.01, 0.006, 0.003, M.acc); led.position.set(0, 0.095, 0.152); head.add(led);
+    }
+    head.traverse(o => { if (o.isMesh) o.castShadow = true; });
+    return { arms, neck, head };
+  }
+
+  // ---------- bipedal humanoid (styles: 'gp' general purpose, 'soft' textile-covered, 'sealed' wet-area, 'bird' reverse-knee) ----------
+  _humanoid(style, accent) {
+    style = style || 'gp';
+    const T = THREE, M = this._humMats(style, accent), D = this._humDims(style);
+    const root = new T.Group();
+    const pelvis = new T.Group(); pelvis.position.y = D.stand; root.add(pelvis);
+    const pv = this._rbox(0.44, 0.22, 0.29, 0.09, M.shell2); pv.position.y = 0.02; pv.castShadow = true; pelvis.add(pv);
+    const legs = { L: this._humLeg(pelvis, 1, D, M, style), R: this._humLeg(pelvis, -1, D, M, style) };
+    const waist = new T.Group(); waist.position.y = 0.13; pelvis.add(waist);
+    const wj = this._roundCyl(0.12, 0.12, 0.03, M.joint, 32); wj.position.y = 0.03; waist.add(wj);
+    const up = this._humUpper(waist, style, D, M);
+    root.userData.rig = { kind: 'biped', style, root, pelvis, waist, neck: up.neck, head: up.head, arms: up.arms, legs, D, M };
+    return root;
+  }
+
+  // ---------- wheeled humanoids with telescoping torso ('vega': differential base; 'galbot': round omni base, single column) ----------
+  _wheeledHum(style, accent) {
+    const T = THREE, M = this._humMats(style, accent), D = this._humDims(style);
+    const root = new T.Group(); const wheels = [];
+    let baseTop;
+    if (style === 'galbot') {
+      const prof = [new T.Vector2(0.62, 0), new T.Vector2(0.78, 0.12), new T.Vector2(0.8, 0.3), new T.Vector2(0.74, 0.46), new T.Vector2(0.56, 0.56), new T.Vector2(0, 0.58)];
+      const base = new T.Mesh(new T.LatheGeometry(prof, 48), M.shell2); base.castShadow = true; root.add(base);
+      const band = this._roundCyl(0.795, 0.06, 0.02, M.dark, 48); band.position.y = 0.2; root.add(band);
+      const trim = new T.Mesh(new T.TorusGeometry(0.77, 0.022, 10, 64), M.acc); trim.rotation.x = Math.PI / 2; trim.position.y = 0.12; root.add(trim);
+      for (let i = 0; i < 3; i++) { const a = i * Math.PI * 2 / 3; const w = new T.Group(); w.position.set(Math.cos(a) * 0.5, 0.12, Math.sin(a) * 0.5); w.rotation.y = -a; root.add(w); const t = this._cyl(0.12, 0.12, 0.09, M.rubber, 18); t.rotation.z = Math.PI / 2; w.add(t); wheels.push({ g: t, r: 0.12, axis: 'x' }); }
+      const lidar = this._roundCyl(0.1, 0.1, 0.02, M.dark, 24); lidar.position.set(0, 0.63, 0.5); root.add(lidar);
+      baseTop = 0.58;
+    } else {
+      const chassis = this._rbox(1.5, 0.26, 1.05, 0.3, M.dark); chassis.position.y = 0.26; root.add(chassis);
+      const deck = this._rbox(1.62, 0.34, 1.16, 0.36, M.shell); deck.position.y = 0.56; deck.castShadow = true; root.add(deck);
+      const deckTop = this._rbox(1.3, 0.08, 0.92, 0.26, M.shell2); deckTop.position.y = 0.77; root.add(deckTop);
+      for (const sx of [-0.76, 0.76]) { const w = new T.Group(); w.position.set(sx, 0.26, 0.1); root.add(w); const t = this._cyl(0.26, 0.26, 0.14, M.rubber, 28); t.rotation.z = Math.PI / 2; w.add(t); const hub = this._cyl(0.14, 0.14, 0.15, M.alu, 20); hub.rotation.z = Math.PI / 2; w.add(hub); wheels.push({ g: w, r: 0.26, axis: 'x' }); }
+      for (const c of [[-0.5, -0.42], [0.5, -0.42], [-0.5, 0.44], [0.5, 0.44]]) { const cw = this._cyl(0.09, 0.09, 0.07, M.rubber, 12); cw.rotation.z = Math.PI / 2; cw.position.set(c[0], 0.09, c[1]); root.add(cw); }
+      const eStrip = this._rbox(0.7, 0.05, 0.04, 0.02, M.acc); eStrip.position.set(0, 0.62, 0.59); root.add(eStrip);
+      const estop = this._cyl(0.05, 0.05, 0.05, this._rawmat(0xc0392b, 0.5, 0.1), 12); estop.position.set(0.55, 0.81, -0.35); root.add(estop);
+      baseTop = 0.79;
+    }
+    // telescoping column: fixed sleeve + moving inner stage carrying the torso
+    const sleeve = this._roundCyl(style === 'galbot' ? 0.2 : 0.22, 0.62, 0.04, M.shell2, 32); sleeve.position.y = baseTop + 0.31; root.add(sleeve);
+    const lift = new T.Group(); lift.position.y = baseTop + 0.5; root.add(lift);
+    const inner = this._roundCyl(style === 'galbot' ? 0.15 : 0.17, 0.9, 0.03, M.joint, 32); inner.position.y = -0.38; lift.add(inner);
+    const waist = new T.Group(); waist.position.y = 0.12; lift.add(waist);
+    const wj = this._roundCyl(0.17, 0.14, 0.03, M.joint, 32); wj.position.y = 0.0; waist.add(wj);
+    const up = this._humUpper(waist, style, D, M);
+    root.userData.rig = { kind: 'wheel', style, root, lift, liftBase: baseTop + 0.5, waist, neck: up.neck, head: up.head, arms: up.arms, legs: null, wheels, D, M };
+    return root;
+  }
+  _vega(accent) { return this._wheeledHum('vega', accent); }
+  _galbot(accent) { return this._wheeledHum('galbot', accent); }
+
+  // ================= HUMANOID WORKFORCE: IK + job controller =================
+  // Two-bone IK in world space. S (shoulder/hip) and its child E (elbow/knee, at (0,-L1,0)) hang along -Y and hinge about local X.
+  _ik2(S, E, L1, L2, T, P) {
+    const V = THREE.Vector3, Q = THREE.Quaternion;
+    const c = this._ikc || (this._ikc = { s: new V(), d: new V(), pv: new V(), n: new V(), u: new V(), e: new V(), f: new V(), x: new V(), y: new V(), z: new V(), m: new THREE.Matrix4(), q: new Q(), pq: new Q(), qx: new Q(), ax: new V(1, 0, 0) });
+    S.parent.getWorldQuaternion(c.pq);
+    S.getWorldPosition(c.s);
+    c.d.subVectors(T, c.s); let len = c.d.length();
+    len = Math.max(Math.abs(L1 - L2) + 1e-3, Math.min(L1 + L2 - 1e-3, len)); c.d.normalize();
+    c.pv.subVectors(P, c.s);
+    c.n.crossVectors(c.d, c.pv); if (c.n.lengthSq() < 1e-8) c.n.set(1, 0, 0).applyQuaternion(c.pq); c.n.normalize();
+    const a = Math.acos(Math.max(-1, Math.min(1, (L1 * L1 + len * len - L2 * L2) / (2 * L1 * len))));
+    c.u.copy(c.d).applyAxisAngle(c.n, a);                                          // upper segment bends toward the pole
+    c.e.copy(c.s).addScaledVector(c.u, L1);
+    c.f.copy(c.d).multiplyScalar(len).add(c.s).sub(c.e).normalize();               // forearm direction
+    c.x.copy(c.n); c.y.copy(c.u).negate(); c.z.crossVectors(c.x, c.y);
+    c.m.makeBasis(c.x, c.y, c.z); c.q.setFromRotationMatrix(c.m);                  // world orientation of S
+    S.quaternion.copy(c.pq).invert().multiply(c.q);
+    const fl = c.f.clone().applyQuaternion(c.q.clone().invert());
+    const th = Math.atan2(-fl.z, -fl.y);
+    E.quaternion.setFromAxisAngle(c.ax, th);
+    return c.q.clone().multiply(E.quaternion);                                    // world orientation of E
+  }
+  _basisQuat(fingerDir, palmN, out) {
+    const y = fingerDir.clone().negate().normalize();
+    const z = palmN.clone().addScaledVector(y, -palmN.dot(y)).normalize();
+    const x = new THREE.Vector3().crossVectors(y, z);
+    return (out || new THREE.Quaternion()).setFromRotationMatrix(new THREE.Matrix4().makeBasis(x, y, z));
+  }
+
+  // controller: everything hangs off one work point W (robot frame) — the tray centre or the hands' midpoint
+  _crewInit(root, o) {
+    const rig = root.userData.rig, V = THREE.Vector3;
+    const idleW = rig.kind === 'wheel' ? new V(0, 1.35, 0.32) : new V(0, 1.3, 0.1);
+    const c = Object.assign({ rig, root, pos: new V(o.x, 0, o.z), yaw: o.yaw || 0, W: idleW.clone(), idleW, spread: rig.kind === 'wheel' ? 0.42 : 0.34, idleSpread: rig.kind === 'wheel' ? 0.42 : 0.34,
+      grip: 0.15, hold: 0, carry: null, look: null, gait: { phase: 0, w: 0, turn: 0 }, speed: 0, queue: [], cur: null, lift: 0, plan: null, tag: o.tag }, o);
+    c.pos.set(o.x, 0, o.z);
+    root.position.copy(c.pos); root.rotation.y = c.yaw;
+    (this._crew = this._crew || []).push(c);
+    return c;
+  }
+  _crewLocal(c, p) { const s = Math.sin(c.yaw), co = Math.cos(c.yaw), dx = p[0] - c.pos.x, dz = p[2] - c.pos.z; return new THREE.Vector3(dx * co - dz * s, p[1], dx * s + dz * co); }
+  _crewWorld(c, l, out) { const s = Math.sin(c.yaw), co = Math.cos(c.yaw); return (out || new THREE.Vector3()).set(c.pos.x + l.x * co + l.z * s, l.y, c.pos.z - l.x * s + l.z * co); }
+  _ease(u) { return u * u * u * (u * (u * 6 - 15) + 10); }
+
+  _crewTick(c, dt) {
+    if (!c.cur) {
+      if (!c.queue.length) c.queue = c.plan ? c.plan() : [{ t: 'wait', dur: 2 }];
+      const st = c.queue.shift();
+      if (st.until && !st.until()) { c.queue.unshift(st); this._crewPose(c, dt); return; }
+      st.k = 0; st.W0 = c.W.clone(); st.s0 = c.spread; st.g0 = c.grip; st.h0 = c.hold; st.p0 = c.pos.clone(); st.y0 = c.yaw;
+      if (st.t === 'walk') {
+        st.p1 = new THREE.Vector3(st.to[0], 0, st.to[1]);
+        const dx = st.p1.x - c.pos.x, dz = st.p1.z - c.pos.z; st.dist = Math.hypot(dx, dz);
+        st.head = st.dist > 0.05 ? Math.atan2(dx, dz) : c.yaw;
+        st.back = !!st.back; if (st.back) st.head = Math.atan2(-dx, -dz);
+        st.turn = Math.atan2(Math.sin(st.head - c.yaw), Math.cos(st.head - c.yaw));
+        const v = st.speed || (c.rig.kind === 'wheel' ? 1.1 : 0.85);
+        st.tTurn = Math.abs(st.turn) > 0.05 ? 0.35 + Math.abs(st.turn) * 0.55 : 0; st.tMove = st.dist > 0.05 ? 0.6 + st.dist / v : 0;
+        st.face = st.face != null ? st.face : null;
+        st.tFace = 0; st.dur = st.tTurn + st.tMove;
+      } else if (st.t === 'turn') {
+        st.turn = Math.atan2(Math.sin(st.yaw - c.yaw), Math.cos(st.yaw - c.yaw)); st.dur = 0.35 + Math.abs(st.turn) * 0.55;
+      } else if (st.t === 'reach') {
+        const at = typeof st.at === 'function' ? st.at(c) : st.at;
+        st.W1 = at === 'idle' ? c.idleW.clone() : at === 'carry' ? (c.carryW || new THREE.Vector3(0, 1.62, 0.44)).clone() : st.local ? new THREE.Vector3(...at) : this._crewLocal(c, at);
+        const sp = typeof st.spread === 'function' ? st.spread(c) : st.spread;
+        st.s1 = sp != null ? sp : (at === 'idle' ? c.idleSpread : c.spread);
+        st.dur = st.dur || 1.0;
+      } else if (st.t === 'follow') { st.dur = 1e9; }
+      st.dur = st.dur == null ? 0.5 : st.dur;
+      if (st.start) st.start(c);
+      c.cur = st;
+    }
+    const st = c.cur; st.k += dt;
+    const u = Math.min(1, st.k / Math.max(st.dur, 1e-4)), e = this._ease(u);
+    c.speed = 0; let turning = 0;
+    if (st.t === 'walk') {
+      if (st.k < st.tTurn) { const uu = this._ease(st.k / st.tTurn); c.yaw = st.y0 + st.turn * uu; turning = 1; }
+      else if (st.tMove > 0) {
+        const uu = Math.min(1, (st.k - st.tTurn) / st.tMove), ee = this._ease(uu);
+        const prev = c.pos.clone(); c.yaw = st.y0 + st.turn;
+        c.pos.lerpVectors(st.p0, st.p1, ee);
+        c.speed = prev.distanceTo(c.pos) / Math.max(dt, 1e-4); c._ds = prev.distanceTo(c.pos) * (st.back ? -1 : 1);
+      }
+    } else if (st.t === 'turn') { c.yaw = st.y0 + st.turn * e; turning = 1; }
+    else if (st.t === 'reach') { c.W.lerpVectors(st.W0, st.W1, e); c.spread = st.s0 + (st.s1 - st.s0) * e; }
+    else if (st.t === 'follow') { st.step(c, dt); }
+    if (st.grip != null) c.grip = st.g0 + (st.grip - st.g0) * e;
+    if (st.hold != null) c.hold = st.h0 + (st.hold - st.h0) * e;
+    if (st.during) st.during(c, u);
+    c.gait.turn = turning;
+    this._crewPose(c, dt);
+    if (u >= 1) { c._ds = 0; const fin = st.end; c.cur = null; if (fin) fin(c); }
+  }
+
+  _crewPose(c, dt) {
+    const rig = c.rig, root = c.root, V = THREE.Vector3, D = rig.D;
+    const g = c.gait;
+    // gait weight follows forward speed (or turning in place)
+    const moving = Math.min(1, c.speed / 0.5);
+    g.w += ((Math.max(moving, g.turn ? 0.55 : 0)) - g.w) * Math.min(1, dt * 6);
+    const Ls = 0.52;
+    if (rig.kind === 'biped') {
+      g.phase += (c._ds || 0) / (2 * Ls) + (g.turn ? dt * 1.1 : 0) + (moving < 0.05 && !g.turn && g.w > 0.02 ? dt * 0.9 : 0);
+    } else if (rig.wheels) {
+      const ds = c._ds || 0; rig.wheels.forEach(w => { w.g.rotation.x += ds / w.r; });
+      if (g.turn) rig.wheels.forEach((w, i) => { w.g.rotation.x += (i % 2 ? 1 : -1) * dt * 1.2; });
+    }
+    root.position.copy(c.pos); root.rotation.y = c.yaw;
+    const W = c.W;
+    // posture from the work point: crouch/lift to its height, lean toward its reach, twist toward it
+    const reachZ = Math.max(0, W.z - (rig.kind === 'wheel' ? 0.5 : 0.36));
+    let lean = Math.min(0.55, reachZ * 0.55 + (rig.kind === 'biped' ? Math.max(0, 1.15 - W.y) * 0.35 : Math.max(0, 1.2 - W.y) * 0.25));
+    const twist = Math.max(-0.5, Math.min(0.5, Math.atan2(W.x, Math.max(0.2, W.z)) * 0.6));
+    if (rig.kind === 'biped') {
+      const crouch = Math.min(D.bird ? 0.46 : 0.42, Math.max(0, (1.25 - W.y) * 0.75));
+      const bob = 0.022 * g.w * (0.5 + 0.5 * Math.cos(g.phase * Math.PI * 4));
+      rig.pelvis.position.set(0.028 * g.w * Math.sin(g.phase * Math.PI * 2), D.stand - crouch - bob, 0);
+      lean += crouch * 0.35;
+    } else {
+      const want = Math.max(-0.45, Math.min(0.72, (W.y + 0.62) - (rig.liftBase + 0.12 + D.shY)));
+      c.lift += (want - c.lift) * Math.min(1, dt * 4);
+      rig.lift.position.y = rig.liftBase + c.lift;
+    }
+    rig.waist.rotation.set(lean, twist, 0, 'YXZ');
+    // head: look at the target / work point / straight ahead while travelling
+    root.updateMatrixWorld(true);
+    const lk = c.look || (g.w > 0.4 && !c.carry ? null : this._crewWorld(c, W));
+    if (lk) {
+      const hp = rig.neck.getWorldPosition(new V()), d = new V().subVectors(lk, hp);
+      const ly = Math.atan2(d.x, d.z) - c.yaw - twist;
+      const yaw = Math.max(-0.9, Math.min(0.9, Math.atan2(Math.sin(ly), Math.cos(ly))));
+      const pitch = Math.max(-0.2, Math.min(0.75, Math.atan2(-d.y, Math.hypot(d.x, d.z)) - lean));
+      rig.neck.rotation.y += (yaw - rig.neck.rotation.y) * Math.min(1, dt * 5);
+      rig.head.rotation.x += (pitch - rig.head.rotation.x) * Math.min(1, dt * 5);
+    } else { rig.neck.rotation.y *= 1 - Math.min(1, dt * 4); rig.head.rotation.x += (0.08 - rig.head.rotation.x) * Math.min(1, dt * 4); }
+    root.updateMatrixWorld(true);
+    // legs: planted-foot gait (feet move linearly backward in stance at exactly the body speed)
+    if (rig.legs) {
+      const fwd = new V(Math.sin(c.yaw), 0, Math.cos(c.yaw)), lat = new V(Math.cos(c.yaw), 0, -Math.sin(c.yaw));
+      ['L', 'R'].forEach((k, i) => {
+        const L = rig.legs[k];
+        let ph = ((g.phase + i * 0.5) % 1 + 1) % 1, z, lift;
+        if (ph < 0.5) { z = Ls / 2 - (ph / 0.5) * Ls; lift = 0; }
+        else { const s = (ph - 0.5) / 0.5; z = -Ls / 2 + Ls * this._ease(s); lift = Math.sin(Math.PI * s) * 0.11; }
+        if (g.turn) z = 0;
+        const foot = new V().copy(c.pos).addScaledVector(lat, L.sd * (D.hipX + 0.01)).addScaledVector(fwd, z * g.w + 0.02);
+        foot.y = D.ankleH + lift * g.w;
+        const hip = L.H.getWorldPosition(new V());
+        const pole = hip.clone().addScaledVector(fwd, D.bird ? -1 : 1).add(new V(0, -0.4, 0));
+        const kq = this._ik2(L.H, L.K, L.L1, L.L2, foot, pole);
+        const fq = new THREE.Quaternion().setFromAxisAngle(new V(0, 1, 0), c.yaw);
+        L.A.quaternion.copy(kq.invert().multiply(fq));
+      });
+    }
+    // arms: hands at the work point ± spread along the robot's lateral axis; idle hands hang and swing
+    const Ww = this._crewWorld(c, W);
+    const fwd = new V(Math.sin(c.yaw), 0, Math.cos(c.yaw)), lat = new V(Math.cos(c.yaw), 0, -Math.sin(c.yaw));
+    const holdBlend = c.hold;
+    ['L', 'R'].forEach(k => {
+      const A = rig.arms[k], sd = A.sd;
+      const sw = rig.legs && !c.carry ? Math.sin(g.phase * Math.PI * 2 + (sd > 0 ? Math.PI : 0)) * 0.17 * g.w * (1 - holdBlend) : 0;
+      const grasp = Ww.clone().addScaledVector(lat, sd * c.spread).addScaledVector(fwd, sw);
+      // hand orientation: idle = fingers down, palm inward; hold = fingers forward/down hooking the tray rim, palm inward
+      const inward = lat.clone().multiplyScalar(-sd);
+      const fIdle = new V(0, -1, 0).addScaledVector(fwd, 0.15).normalize();
+      const fHold = fwd.clone().multiplyScalar(0.55).add(new V(0, -0.75, 0)).addScaledVector(inward, 0.25).normalize();
+      const fdir = fIdle.clone().lerp(fHold, holdBlend).normalize();
+      const wristT = grasp.clone().addScaledVector(fdir, -D.grasp);
+      const sh = A.S.getWorldPosition(new V());
+      const pole = sh.clone().addScaledVector(lat, sd * 0.55).addScaledVector(fwd, -0.55).add(new V(0, -0.5, 0));
+      const eq = this._ik2(A.S, A.E, A.L1, A.L2, wristT, pole);
+      const hq = this._basisQuat(fdir, inward);
+      A.W.quaternion.copy(eq.invert().multiply(hq));
+      A.hand.set(c.grip);
+    });
+    if (c.carry) { c.carry.position.copy(W); c.carry.rotation.set(0, c.carryRot || 0, 0); }
+  }
+  _updateCrew(dt) { if (this._crew) this._crew.forEach(c => this._crewTick(c, dt)); this._tickGrow(dt); }
+
+  // job helpers (all positions in world space)
+  _jGrab(c, obj) { return { t: 'wait', dur: 0.45, grip: 0.62, hold: 1, end: () => { c.root.attach(obj); c.carry = obj; } }; }
+  _jRelease(c, parent, pos, rotY) {
+    return { t: 'wait', dur: 0.4, grip: 0.15, end: () => {
+      const o = c.carry; if (!o) return;
+      parent.attach(o); parent.updateWorldMatrix(true, false);
+      o.position.copy(parent.worldToLocal(new THREE.Vector3(...pos)));
+      const pq = parent.getWorldQuaternion(new THREE.Quaternion()).invert();
+      o.quaternion.copy(pq.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), rotY || 0)));
+      c.carry = null;
+    } };
+  }
+  // pick an object: optional walk/turn, hover above, descend, grasp both ends, lift to carry
+  _jPick(c, obj, stand, faceYaw, spread) {
+    const p = () => { const w = obj.getWorldPosition(new THREE.Vector3()); return [w.x, w.y, w.z]; };
+    const s = [];
+    if (stand) s.push({ t: 'walk', to: stand }, { t: 'turn', yaw: faceYaw });
+    s.push({ t: 'reach', at: () => { const q = p(); q[1] += 0.2; return q; }, spread: spread || 0.47, dur: 1.0, hold: 1, grip: 0.12, start: (cc) => { cc.look = null; } },
+      { t: 'reach', at: p, dur: 0.6 },
+      this._jGrab(c, obj),
+      { t: 'reach', at: () => { const q = p(); q[1] += 0.12; return q; }, dur: 0.45 },
+      { t: 'reach', at: 'carry', dur: 0.9 });
+    return s;
+  }
+  // place the carried object at a world position (yaw = its final world heading)
+  _jPlace(c, parent, at, stand, faceYaw, rotY, extra) {
+    const s = [];
+    if (stand) s.push({ t: 'walk', to: stand }, { t: 'turn', yaw: faceYaw });
+    const above = [at[0], at[1] + 0.2, at[2]];
+    s.push({ t: 'reach', at: above, dur: 1.0 }, { t: 'reach', at, dur: 0.6 }, this._jRelease(c, parent, at, rotY));
+    if (extra) s.push(extra);
+    s.push({ t: 'reach', at: above, dur: 0.5, hold: 0, spread: () => c.spread + 0.08 }, { t: 'reach', at: 'idle', dur: 0.8 });
+    return s;
+  }
+
+  // ================= HUMANOID WORKFORCE: props + jobs =================
+  _xferCart(x, z, ry, parent) {
+    const T = THREE, cart = new T.Group(), deckY = 0.95;
+    const ss = this._rawmat(0xc4ccd6, 0.3, 0.75), ssD = this._rawmat(0x8b97a6, 0.4, 0.6), tire = this._rawmat(0x1a1d22, 0.8, 0.05);
+    const deck = this._rbox(1.3, 0.05, 0.92, 0.05, ss); deck.position.y = deckY - 0.025; deck.castShadow = true; deck.receiveShadow = true; cart.add(deck);
+    for (const zz of [-0.46, 0.46]) { const l = this._rbox(1.3, 0.06, 0.03, 0.01, ssD); l.position.set(0, deckY + 0.02, zz); cart.add(l); }
+    const low = this._rbox(1.2, 0.04, 0.84, 0.04, ssD); low.position.y = 0.3; cart.add(low);
+    for (const xx of [-0.6, 0.6]) for (const zz of [-0.42, 0.42]) {
+      const post = this._cyl(0.025, 0.025, deckY - 0.12, ssD, 10); post.position.set(xx, 0.12 + (deckY - 0.12) / 2, zz); cart.add(post);
+      const w = this._cyl(0.075, 0.075, 0.05, tire, 16); w.rotation.z = Math.PI / 2; w.position.set(xx, 0.075, zz); cart.add(w);
+    }
+    const handle = this._cyl(0.022, 0.022, 0.84, ssD, 10); handle.rotation.x = Math.PI / 2; handle.position.set(-0.72, deckY + 0.28, 0); cart.add(handle);
+    for (const zz of [-0.42, 0.42]) { const up = this._cyl(0.02, 0.02, 0.3, ssD, 8); up.position.set(-0.68, deckY + 0.13, zz); cart.add(up); }
+    cart.position.set(x, 0, z); cart.rotation.y = ry || 0; (parent || this._crewG).add(cart);
+    return cart;
+  }
+  _crewTray(color, x, y, z, yaw) { const t = this._tray(color); t.scale.set(0.8, 0.8, 0.8); t.position.set(x, y, z); t.rotation.y = yaw || 0; this._crewG.add(t); return t; }
+  _grow(obj) { const u = obj.userData; u.base = u.base || 0.8; obj.visible = true; u.grow = 0; obj.scale.setScalar(0.001); (this._growing = this._growing || []).push(obj); }
+  _fade(obj, then) { const u = obj.userData; u.base = obj.scale.x || 0.8; u.fade = 1; u.fadeThen = then; (this._growing = this._growing || []).push(obj); }
+  _tickGrow(dt) {
+    if (!this._growing) return;
+    for (let i = this._growing.length - 1; i >= 0; i--) {
+      const o = this._growing[i], u = o.userData;
+      if (u.grow != null) { u.grow = Math.min(1, u.grow + dt * 1.6); o.scale.setScalar(u.base * this._ease(u.grow)); if (u.grow >= 1) { delete u.grow; this._growing.splice(i, 1); } }
+      else if (u.fade != null) { u.fade = Math.max(0, u.fade - dt * 1.4); o.scale.setScalar(u.base * Math.max(0.001, this._ease(u.fade))); if (u.fade <= 0) { delete u.fade; o.visible = false; o.scale.setScalar(u.base); this._growing.splice(i, 1); if (u.fadeThen) u.fadeThen(); } }
+    }
+  }
+  _beltClear(z0, x0) { return !(this._beltRiders || []).some(r => { const wx = r.obj.parent.position.x + r.obj.position.x, wz = r.obj.parent.position.z + r.obj.position.z; return z0 != null ? (Math.abs(wz - z0) < 1.0 && Math.abs(wx + 30.55) < 0.6) : Math.abs(wx - x0) < 1.0; }); }
+  _ride(obj, dir, end, done) { (this._beltRiders = this._beltRiders || []).push({ obj, dir, end, done, belt: 'soiled' }); }
+
+  _buildCrewJobs(scene) {
+    const T = THREE, V = T.Vector3, PI = Math.PI;
+    this._crewG = new T.Group(); scene.add(this._crewG);
+    const H = this._anim.humans.map(h => h.obj), WH = this._anim.vegas.map(v => v.obj), MM = this._anim.galbots.map(g => g.obj);
+    const asset = (id, desc, metrics) => { const a = this._assets[id]; if (a) { a.desc = desc; if (metrics) a.metrics = metrics; } };
+    const TY = 0.95 + 0.064;                                                              // tray centre on a transfer-cart deck
+    const sinkX = i => this._room('decon').cx - (this._room('decon').w - 7) / 2 + i * (this._room('decon').w - 7) / 9;
+
+    // ---- shuttle between two spots (alternating direction each cycle) ----
+    const shuttle = (c, tray, A, B, opts) => {
+      opts = opts || {}; let atA = true;
+      c.plan = () => {
+        const [from, to] = atA ? [A, B] : [B, A]; atA = !atA;
+        const q = [...this._jPick(c, tray, from.stand, from.yaw, opts.spread)];
+        if (opts.inspect) q.push({ t: 'reach', local: true, at: [0, opts.inspect, 0.5], dur: 1.0, start: (cc) => { cc.look = tray.getWorldPosition(new V()); } },
+          { t: 'wait', dur: 1.3, during: (cc, u) => { cc.W.x = Math.sin(u * PI * 2) * 0.06; cc.look = tray.getWorldPosition(new V()); } },
+          { t: 'reach', at: 'carry', dur: 0.7, start: (cc) => { cc.look = null; } });
+        if (opts.via) q.push(...opts.via(to === A));
+        q.push(...this._jPlace(c, this._crewG, to.at, to.stand, to.yaw, to.rot || 0), { t: 'wait', dur: opts.dwell || 1.2 });
+        return q;
+      };
+    };
+
+    // ---------- bipeds ----------
+    // HU-1 / HU-2 (soft-goods covering, beside the CSTs): move sets between inspection and pack tables, checking each one
+    {
+      const c = this._crewInit(H[0], { x: -0.75, z: -23.55, yaw: PI, tag: 'HU-1' });
+      const tray = this._crewTray(0x9fe6ff, -0.75, 1.394, -24.4, 0);
+      shuttle(c, tray, { at: [-0.75, 1.394, -24.4], stand: [-0.75, -23.55], yaw: PI }, { at: [9.6, 1.394, -19.6], stand: [9.6, -20.45], yaw: 0 }, { inspect: 1.95 });
+      asset('hum-1', 'Textile-covered general-purpose humanoid working beside the CSTs. Lifts each finished set from the inspection table, checks it at eye level with its head cameras, and carries it across the aisle to the pack table.',
+        [{ k: 'Class', v: 'Biped · soft-goods cover' }, { k: 'Hands', v: '5-finger, tactile' }, { k: 'Task', v: 'Inspect → pack' }, { k: 'Speed', v: '0.55 m/s (with staff)' }]);
+    }
+    {
+      const c = this._crewInit(H[1], { x: -21.9, z: -23.55, yaw: PI, tag: 'HU-2' });
+      const tray = this._crewTray(0xf4d08a, -21.9, 1.394, -24.4, 0);
+      shuttle(c, tray, { at: [-21.9, 1.394, -24.4], stand: [-21.9, -23.55], yaw: PI }, { at: [-21.9, 1.394, -19.6], stand: [-21.9, -20.45], yaw: 0 }, { inspect: 1.95, dwell: 2.0 });
+      asset('hum-2', 'Textile-covered humanoid at the west prep line. Picks up each assembled set, holds it up for a count check under its head cameras, then turns and stages it on the opposite table for wrapping.',
+        [{ k: 'Class', v: 'Biped · soft-goods cover' }, { k: 'Hands', v: '5-finger, tactile' }, { k: 'Task', v: 'Count check → stage' }, { k: 'Speed', v: '0.55 m/s (with staff)' }]);
+    }
+    // HU-3 / HU-4 (sealed, wet-area rated): soak → drain → rinse between two sinks and a drain cart
+    const sinkJob = (c, x1, x2, cartX, color, id, label) => {
+      this._xferCart(cartX, 0.9, 0);
+      const tray = this._crewTray(color, x1, 1.1, -2.35, 0);
+      const S1 = { at: [x1, 1.1, -2.35], stand: [x1, -1.0], yaw: PI }, S2 = { at: [x2, 1.1, -2.35], stand: [x2, -1.0], yaw: PI };
+      const C = { at: [cartX, TY, 0.9], stand: [cartX, -0.12], yaw: 0 };
+      const legs = [[S1, C], [C, S2], [S2, C], [C, S1]]; let i = 0;
+      c.plan = () => { const [a, b] = legs[i]; i = (i + 1) % 4; return [...this._jPick(c, tray, a.stand, a.yaw), ...this._jPlace(c, this._crewG, b.at, b.stand, b.yaw, 0), { t: 'wait', dur: b === C ? 1.4 : 2.4 }]; };
+      asset(id, label, [{ k: 'Class', v: 'Biped · sealed (IP67-type)' }, { k: 'Joints', v: 'Booted, washdown' }, { k: 'Task', v: 'Soak → drain → rinse' }, { k: 'Sinks', v: 'Bays ' + (x1 === sinkX(2) ? '3 – 4' : '7 – 8') }]);
+    };
+    sinkJob(this._crewInit(H[2], { x: sinkX(2), z: -1.0, yaw: PI, tag: 'HU-3' }), sinkX(2), sinkX(3), (sinkX(2) + sinkX(3)) / 2, 0xf4a8bd, 'hum-3',
+      'Sealed, wet-area humanoid on the manual decontam line. Lifts instrument trays out of the soak sink, drains them on the cart, and lowers them into the rinse sink — the splash-zone work techs rotate out of.');
+    sinkJob(this._crewInit(H[3], { x: sinkX(6), z: -1.0, yaw: PI, tag: 'HU-4' }), sinkX(6), sinkX(7), (sinkX(6) + sinkX(7)) / 2, 0xf0b89e, 'hum-4',
+      'Sealed, wet-area humanoid on the east decontam bays. Same soak → drain → rinse cycle, sharing the line with the techs and handing finished trays toward the washers.');
+    // HU-5 (general purpose): load / unload washer-disinfector W-3 from its staging cart
+    {
+      const wr = this._room('wash'), wx = wr.cx + 6, door = wr.cz + 1.75;
+      const c = this._crewInit(H[4], { x: wx - 3.3, z: door + 0.5, yaw: 0, tag: 'HU-5' });
+      this._xferCart(wx - 3.3, door + 1.65, 0);
+      const tray = this._crewTray(0x9fe6ff, wx - 3.3, TY, door + 1.65, 0);
+      let loaded = false;
+      const pushIn = [wx, 1.32, door - 0.45], front = [wx, 1.32, door + 0.28];
+      c.plan = () => {
+        const q = [];
+        if (!loaded) {
+          q.push(...this._jPick(c, tray, [wx - 3.3, door + 0.5], 0),
+            { t: 'walk', to: [wx, door + 1.0] }, { t: 'turn', yaw: PI },
+            { t: 'reach', at: front, dur: 1.0 }, { t: 'reach', at: pushIn, dur: 0.9, end: () => { } },
+            this._jRelease(c, this._crewG, pushIn, 0),
+            { t: 'wait', dur: 0.1, end: () => { tray.visible = false; } },
+            { t: 'reach', at: front, dur: 0.6, hold: 0 }, { t: 'reach', at: 'idle', dur: 0.8 }, { t: 'wait', dur: 3.2 });
+        } else {
+          q.push({ t: 'walk', to: [wx, door + 1.0] }, { t: 'turn', yaw: PI },
+            { t: 'reach', at: front, dur: 0.9, hold: 1, start: () => { tray.visible = true; } }, { t: 'reach', at: pushIn, dur: 0.8 },
+            this._jGrab(c, tray), { t: 'reach', at: front, dur: 0.9 }, { t: 'reach', at: 'carry', dur: 0.8 },
+            ...this._jPlace(c, this._crewG, [wx - 3.3, TY, door + 1.65], [wx - 3.3, door + 0.5], 0, 0), { t: 'wait', dur: 1.6 });
+        }
+        loaded = !loaded; return q;
+      };
+      asset('hum-5', 'General-purpose humanoid at washer-disinfector W-3. Loads wash trays through the door from its staging cart, waits out the cycle, then draws them back out — the same loading motion a tech repeats a few hundred times a shift.',
+        [{ k: 'Class', v: 'Biped · general purpose' }, { k: 'Hands', v: '22-DOF class, 5-finger' }, { k: 'Task', v: 'Load / unload W-3' }, { k: 'Payload', v: '20 kg sustained' }]);
+    }
+    // HU-6 (general purpose): soiled intake — tray from the inbound cart onto the intake belt
+    {
+      const sr = this._room('soiled'), cx2 = sr.cx + 7, cz2 = sr.cz + 2.4;          // existing cart (-29, 18.4)
+      const c = this._crewInit(H[5], { x: cx2, z: cz2 - 1.25, yaw: 0, tag: 'HU-6' });
+      const home = [cx2, 1.70, cz2 - 0.2];
+      const tray = this._crewTray(0xf4a8bd, ...home, 0);
+      c.plan = () => [
+        { t: 'wait', dur: 0.3, until: () => tray.visible && tray.userData.grow == null },
+        ...this._jPick(c, tray, [cx2, cz2 - 1.25], 0),
+        { t: 'walk', to: [cx2 - 0.6, 15.4] }, { t: 'turn', yaw: -PI / 2 },
+        { t: 'wait', dur: 0.2, until: () => this._beltClear(15.4) },
+        ...this._jPlace(c, this._crewG, [-30.55, 1.224, 15.4], null, null, PI / 2, { t: 'wait', dur: 0.05, end: () => this._ride(tray, [0, -1], -12.9, () => { tray.position.set(...home); tray.rotation.set(0, 0, 0); this._grow(tray); }) }),
+        { t: 'walk', to: [cx2, cz2 - 1.25] }, { t: 'turn', yaw: 0 }, { t: 'wait', dur: 0.8 }];
+      asset('hum-6', 'General-purpose humanoid at soiled receiving. Lifts trays off inbound case carts and sets them on the intake belt to decontam, waiting for a gap when a tray from the dock manipulator is passing.',
+        [{ k: 'Class', v: 'Biped · general purpose' }, { k: 'Hands', v: '22-DOF class, 5-finger' }, { k: 'Task', v: 'Cart → intake belt' }, { k: 'Interlock', v: 'Belt gap check' }]);
+    }
+    // HU-7 (new): reverse-knee tote runner — catches trays at the end of the decanting belt and walks them to soak sink 1
+    {
+      const bot = this._humanoid('bird', 0x35c2ff);
+      scene.add(bot); this._anim.humans.push({ obj: bot });
+      const ring = this._selRing(bot, 1.0, 0x22d3ee, 0.05);
+      this._addPick(bot, 'hum-7', 1.4, 2.6, 1.2, 0, 1.3, 0);
+      this._registerAsset('hum-7', { tag: 'HU-7', kindLabel: 'HUMANOID · TOTE RUNNER', name: 'Reverse-knee tote runner · HU-7', accent: '#7fe6ff',
+        desc: 'Reverse-knee biped built for tote and tray handling — the last metre between automation and people. Catches trays at the end of the decanting belt, crouches to lift them and walks them to soak sink 1 for the decontam techs.',
+        metrics: [{ k: 'Class', v: 'Biped · reverse-knee' }, { k: 'Hands', v: 'Tote paddles' }, { k: 'Task', v: 'Belt end → soak sink' }, { k: 'Payload', v: '16 kg' }] }, [this._ringFn(ring)]);
+      const sx = sinkX(0), px = -11.0;
+      const c = this._crewInit(bot, { x: px, z: -6.2, yaw: PI, tag: 'HU-7' });
+      this._pickup = { x: px, want: true, tray: null, cell: null };
+      c.plan = () => {
+        let tray = null, cell = null;
+        return [
+          { t: 'wait', dur: 0.2, until: () => !!this._pickup.tray, end: () => { tray = this._pickup.tray; cell = this._pickup.cell; } },
+          { t: 'reach', at: () => { const w = tray.getWorldPosition(new V()); return [w.x, w.y + 0.2, w.z]; }, spread: 0.42, dur: 1.0, hold: 1, grip: 0.1 },
+          { t: 'reach', at: () => { const w = tray.getWorldPosition(new V()); return [w.x, w.y, w.z]; }, dur: 0.6 },
+          { t: 'wait', dur: 0.45, grip: 0.7, end: () => { c.root.attach(tray); c.carry = tray; this._pickup.tray = null; this._pickup.want = false; } },
+          { t: 'reach', at: 'carry', dur: 1.0 },
+          { t: 'walk', to: [-10.75, -1.0] }, { t: 'walk', to: [sx, -1.0] }, { t: 'turn', yaw: PI },
+          { t: 'reach', at: [sx, 1.3, -2.35], dur: 1.0 }, { t: 'reach', at: [sx, 1.1, -2.35], dur: 0.6 },
+          { t: 'wait', dur: 0.4, grip: 0.1, end: () => { this._crewG.attach(tray); tray.position.set(sx, 1.1, -2.35); tray.rotation.set(0, 0, 0); c.carry = null; } },
+          { t: 'reach', at: [sx, 1.35, -2.35], dur: 0.5, hold: 0 }, { t: 'reach', at: 'idle', dur: 0.8, end: () => {
+            this._fade(tray, () => { if (cell) { cell.G.attach(tray); tray.visible = false; tray.scale.setScalar(0.7); cell.pool.push(tray); } });
+          } },
+          { t: 'walk', to: [-10.75, -1.0] }, { t: 'walk', to: [px, -6.2] }, { t: 'turn', yaw: PI, end: () => { this._pickup.want = true; } }];
+      };
+    }
+
+    // ---------- wheeled humanoids ----------
+    // WH-01: sterilizer bank — pass-through loading at the back of chamber S-2
+    {
+      const st = this._room('steril'), sxx = st.cx - 2.5, back = st.cz - 1.6;
+      const c = this._crewInit(WH[0], { x: sxx - 2.7, z: back - 1.65, yaw: PI, tag: 'WH-01' });
+      this._xferCart(sxx - 2.7, back - 2.8, 0);
+      const tray = this._crewTray(0xc9b6f5, sxx - 2.7, TY, back - 2.8, 0);
+      let loaded = false; const front = [sxx, 1.5, back - 0.35], inside = [sxx, 1.5, back + 0.3];
+      c.plan = () => {
+        const q = [];
+        if (!loaded) q.push(...this._jPick(c, tray, [sxx - 2.7, back - 1.65], PI), { t: 'walk', to: [sxx, back - 1.15] }, { t: 'turn', yaw: 0 },
+          { t: 'reach', at: front, dur: 1.0 }, { t: 'reach', at: inside, dur: 0.9 }, this._jRelease(c, this._crewG, inside, 0), { t: 'wait', dur: 0.1, end: () => { tray.visible = false; } },
+          { t: 'reach', at: front, dur: 0.6, hold: 0 }, { t: 'reach', at: 'idle', dur: 0.8 }, { t: 'wait', dur: 3.5 });
+        else q.push({ t: 'walk', to: [sxx, back - 1.15] }, { t: 'turn', yaw: 0 }, { t: 'reach', at: front, dur: 0.9, hold: 1, start: () => { tray.visible = true; } }, { t: 'reach', at: inside, dur: 0.8 },
+          this._jGrab(c, tray), { t: 'reach', at: front, dur: 0.9 }, { t: 'reach', at: 'carry', dur: 0.8 },
+          ...this._jPlace(c, this._crewG, [sxx - 2.7, TY, back - 2.8], [sxx - 2.7, back - 1.65], PI, 0), { t: 'wait', dur: 1.5 });
+        loaded = !loaded; return q;
+      };
+    }
+    // WH-02: prep kitting — holds each set up for inspection while crossing the aisle
+    {
+      const c = this._crewInit(WH[1], { x: 20.3, z: -23.25, yaw: PI, tag: 'WH-02' });
+      const tray = this._crewTray(0x7fffc4, 20.3, 1.394, -24.4, 0);
+      shuttle(c, tray, { at: [20.3, 1.394, -24.4], stand: [20.3, -23.25], yaw: PI }, { at: [20.3, 1.394, -19.6], stand: [20.3, -20.75], yaw: 0 }, { inspect: 2.05, dwell: 1.6 });
+    }
+    // WH-03: top-of-rack picking with the telescoping torso, building a case cart
+    {
+      const c = this._crewInit(WH[2], { x: 36.35, z: 11.0, yaw: PI / 2, tag: 'WH-03' });
+      c.carryRot = PI / 2;
+      this._xferCart(36.0, 13.55, 0);
+      const slot = [37.8, 0.6324 + 4 * 0.64, 11.0];
+      const tray = this._crewTray(0xc9b6f5, ...slot, 0);
+      shuttle(c, tray, { at: slot, stand: [36.35, 11.0], yaw: PI / 2, rot: 0 }, { at: [36.0, TY, 13.55], stand: [36.0, 12.42], yaw: 0, rot: PI / 2 }, { spread: 0.36, dwell: 2.2 });
+    }
+    // WH-04: corridor tray run (washers → staging carousels → prep) on its loop, carrying a tray
+    {
+      const v = this._anim.vegas[3], curve = v.curve;
+      const c = this._crewInit(WH[3], { x: 0, z: 0, yaw: 0, tag: 'WH-04' });
+      const tray = this._crewTray(0xf5c97a, 0, 0, 0, 0);
+      c.root.attach(tray); c.carry = tray; c.W.set(0, 1.62, 0.5); c.hold = 1; c.grip = 0.62; c.spread = 0.47;
+      let u = 0.15;
+      c.plan = () => [{ t: 'follow', step: (cc, dt) => {
+        u = (u + dt * 0.012) % 1;
+        const p = curve.getPointAt(u), q = curve.getPointAt((u + 0.004) % 1);
+        const prev = cc.pos.clone(); cc.pos.set(p.x, 0, p.z);
+        const want = Math.atan2(q.x - p.x, q.z - p.z); const dy = Math.atan2(Math.sin(want - cc.yaw), Math.cos(want - cc.yaw)); cc.yaw += dy * Math.min(1, dt * 4);
+        cc._ds = prev.distanceTo(cc.pos); cc.speed = cc._ds / Math.max(dt, 1e-4);
+        cc.look = new V(p.x + Math.sin(cc.yaw) * 3, 1.4, p.z + Math.cos(cc.yaw) * 3);
+      } }];
+    }
+    // WH-05: digital-twin bay — rehearses tomorrow's grasp sequence on a holographic tray
+    {
+      const c = this._crewInit(WH[4], { x: -20.4, z: -3.5, yaw: -PI / 2, tag: 'WH-05' });
+      const ghost = this._tray(0x7fe6ff); ghost.scale.setScalar(0.8);
+      ghost.traverse(o => { if (o.isMesh) { o.material = new T.MeshBasicMaterial({ color: 0x7fe6ff, transparent: true, opacity: 0.35, depthWrite: false }); } });
+      this._crewG.add(ghost); ghost.visible = false;
+      const pickL = [0.55, 1.25, 0.95], placeL = [-0.55, 1.55, 0.9];
+      const toW = l => this._crewWorld(c, new V(...l)).toArray();
+      c.plan = () => [
+        { t: 'wait', dur: 0.3, end: () => { ghost.position.fromArray(toW(pickL)); ghost.rotation.set(0, c.yaw, 0); this._grow(ghost); } },
+        { t: 'reach', local: true, at: [pickL[0], pickL[1] + 0.2, pickL[2]], spread: 0.47, dur: 1.0, hold: 1, grip: 0.1 },
+        { t: 'reach', local: true, at: pickL, dur: 0.6 }, this._jGrab(c, ghost),
+        { t: 'reach', local: true, at: [0, 1.75, 0.6], dur: 1.0 }, { t: 'reach', local: true, at: placeL, dur: 1.0 },
+        this._jRelease(c, this._crewG, toW(placeL), c.yaw),
+        { t: 'reach', local: true, at: [placeL[0], placeL[1] + 0.2, placeL[2]], dur: 0.5, hold: 0, end: () => this._fade(ghost) },
+        { t: 'reach', at: 'idle', dur: 0.9 }, { t: 'wait', dur: 1.4 }];
+    }
+
+    // ---------- mobile manipulators ----------
+    // MM-01: decontam east — moves trays between soak sink 10 and rinse sink 9
+    {
+      const x1 = sinkX(9), x2 = sinkX(8);
+      const c = this._crewInit(MM[0], { x: x1, z: -0.92, yaw: PI, tag: 'MM-01' });
+      const tray = this._crewTray(0x39ff9e, x1, 1.1, -2.35, 0);
+      shuttle(c, tray, { at: [x1, 1.1, -2.35], stand: [x1, -0.92], yaw: PI }, { at: [x2, 1.1, -2.35], stand: [x2, -0.92], yaw: PI }, { dwell: 2.6 });
+      asset('gb-1', 'Wheeled mobile manipulator on the east decontam bays. Lifts trays out of the soak sink and rolls them to the rinse sink, keeping the far end of the line moving while the techs work the brushing stations.',
+        [{ k: 'Arms', v: '2 \u00d7 7-DOF' }, { k: 'Reach', v: '0.95 m' }, { k: 'Task', v: 'Soak \u2192 rinse transfer' }, { k: 'Base', v: 'Omni wheels' }]);
+    }
+    // MM-02: sterile storage — builds a case cart from the sterile staging cart, three sets per cart
+    {
+      const c = this._crewInit(MM[1], { x: 35.6, z: 6.65, yaw: PI, tag: 'MM-02' });
+      this._xferCart(35.6, 5.3, 0); this._xferCart(35.6, 8.0, 0);
+      const src = [0, 1, 2].map(i => this._crewTray(0xb6acff, 35.6, TY + i * 0.128, 5.3, 0));
+      let stack = src.slice(), built = [];
+      c.plan = () => {
+        if (!stack.length || stack[stack.length - 1].userData.grow != null) return [{ t: 'wait', dur: 0.3 }];
+        const t = stack.pop(), n = built.length;
+        const q = [...this._jPick(c, t, null, null), { t: 'turn', yaw: 0 }, ...this._jPlace(c, this._crewG, [35.6, TY + n * 0.128, 8.0], null, null, 0), { t: 'turn', yaw: PI, end: () => { built.push(t); } }];
+        if (n === 2) q.push({ t: 'wait', dur: 1.6, end: () => { built.forEach(b => this._fade(b, () => { })); } }, { t: 'wait', dur: 1.2, end: () => { src.forEach((s, i) => { s.position.set(35.6, TY + i * 0.128, 5.3); this._grow(s); }); stack = src.slice(); built = []; } });
+        return q;
+      };
+    }
+    // MM-03: soiled dock — unloads the inbound dock cart onto the intake belt after a tag scan
+    {
+      const c = this._crewInit(MM[2], { x: -28.75, z: 20.0, yaw: PI / 2, tag: 'MM-03' });
+      this._xferCart(-27.45, 20.0, PI / 2);
+      const src = [0, 1].map(i => this._crewTray(i ? 0xf8c4d4 : 0xf4a8bd, -27.45, TY + i * 0.128, 20.0, PI / 2));
+      let stack = src.slice(); c.carryRot = 0;
+      c.plan = () => {
+        if (!stack.length || stack[stack.length - 1].userData.grow != null) return [{ t: 'wait', dur: 0.3 }];
+        const q = [], t = stack[stack.length - 1];
+        q.push(...this._jPick(c, t, [-28.75, 20.0], PI / 2), { t: 'wait', dur: 1.0, during: (cc) => { cc.look = t.getWorldPosition(new V()); }, end: (cc) => { cc.look = null; stack.pop(); } },
+          { t: 'walk', to: [-29.35, 20.0], back: true }, { t: 'turn', yaw: -PI / 2 },
+          { t: 'wait', dur: 0.2, until: () => this._beltClear(20.0) },
+          ...this._jPlace(c, this._crewG, [-30.55, 1.224, 20.0], null, null, PI / 2, { t: 'wait', dur: 0.05, end: () => this._ride(t, [0, -1], -12.9, () => {
+            if (stack.length === 0) { src.forEach((s, i) => { s.position.set(-27.45, TY + i * 0.128, 20.0); s.rotation.set(0, PI / 2, 0); this._grow(s); }); stack = src.slice(); }
+          }) }),
+          { t: 'turn', yaw: PI / 2 }, { t: 'walk', to: [-28.75, 20.0] }, { t: 'wait', dur: 0.6 });
+        return q;
+      };
+    }
   }
 
   // ---------- seated sterile-processing tech ----------
