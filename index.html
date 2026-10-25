@@ -21121,7 +21121,9 @@ class Component extends DCLogic {
     this._mouse = new THREE.Vector2();
     this._rooms.forEach(r => this._pickables.push(r._floor));
     renderer.domElement.addEventListener('pointermove', (e) => this._onHover(e));
+    renderer.domElement.addEventListener('pointerdown', (e) => { this._downAt = { x: e.clientX, y: e.clientY }; });
     renderer.domElement.addEventListener('click', (e) => this._onClick(e));
+    this._floorPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 
     // apply prop visibility
     const detail = this.props.robotDetail ?? 'Cinematic';
@@ -22656,12 +22658,48 @@ class Component extends DCLogic {
     if (!this._ray) return;
     this._ndc(e);
     this._ray.setFromCamera(this._mouse, this._camera);
+    const d = this._downAt; this._downAt = null;
+    if (d && Math.hypot(e.clientX - d.x, e.clientY - d.y) > 6) return;   // that was an orbit/pan drag, not a click
     const hit = this._ray.intersectObjects(this._pickables, false).find(h => this._visible(h.object));
-    if (!hit) return;
-    const ud = hit.object.userData;
-    const id = ud.pickId || ud.roomId;
-    if (ud.roomId) this._selectRoom(ud.roomId);
-    else if (this._assets[id]) this._selectAsset(id);
+    if (hit) {
+      const ud = hit.object.userData;
+      const id = ud.pickId || ud.roomId;
+      if (ud.roomId) this._selectRoom(ud.roomId);
+      else if (this._assets[id]) { this._selectAsset(id); return; }   // robots / equipment: open the card, keep the camera
+    }
+    // camera focus: fly in on the clicked point of the floor
+    const g = new THREE.Vector3();
+    if (hit) g.set(hit.point.x, 0, hit.point.z);
+    else if (!this._ray.ray.intersectPlane(this._floorPlane, g)) return;
+    this._focusFloor(g.x, g.z);
+  }
+  // Closer view of any floor point. Overhead views keep the current heading and step in;
+  // street view walks the eye toward the point (capped hop) and faces it.
+  _focusFloor(px, pz) {
+    const cam = this._camera, c = this._controls;
+    if (!cam || !c) return;
+    const x = Math.max(-52, Math.min(53, px)), z = Math.max(-30, Math.min(30, pz));
+    if (this.state.view === 'walk') {
+      const eye = cam.position;
+      const dx = x - eye.x, dz = z - eye.z, d = Math.hypot(dx, dz);
+      if (d < 0.5) return;
+      const ux = dx / d, uz = dz / d, hop = Math.min(16, Math.max(0, d - 3));
+      const nx = eye.x + ux * hop, nz = eye.z + uz * hop;
+      this._tweenCam([nx, eye.y, nz], [nx + ux * 26, 3.4, nz + uz * 26], 1.5);
+      return;
+    }
+    const off = cam.position.clone().sub(c.target);
+    const dist = off.length() || 60;
+    off.normalize();
+    const minUp = 0.55;                                     // keep a readable downward angle
+    if (off.y < minUp) {
+      const h = Math.hypot(off.x, off.z) || 1, k = Math.sqrt(1 - minUp * minUp);
+      off.set(off.x / h * k, minUp, off.z / h * k);
+    }
+    const nd = Math.max(26, Math.min(dist * 0.6, 48));      // each click steps closer, down to a floor of 26
+    const tgt = new THREE.Vector3(x, 1, z);
+    const pos = tgt.clone().addScaledVector(off, nd);
+    this._labelShot([pos.x, pos.y, pos.z], [tgt.x, tgt.y, tgt.z]);
   }
   _selectAsset(id) {
     const prev = this._curSel;
