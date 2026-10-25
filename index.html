@@ -21278,7 +21278,7 @@ class Component extends DCLogic {
     // STERILE STORAGE: high-density narrow racks
     {
       const r = this._room('storage');
-      for (let i = 0; i < 5; i++) scene.add(this._hdRack(r.cx - 5.2 + i * 2.6, r.cz));
+      for (let i = 0; i < 5; i++) scene.add(this._hdRack(r.cx - 5.2 + i * 2.6, r.cz, i === 0 ? [0, 6] : null));
     }
     // DISPATCH / LIFTS: elevator bank + sterile staging carts
     {
@@ -21325,9 +21325,10 @@ class Component extends DCLogic {
     return g;
   }
 
-  _hdRack(x, z) {
+  _hdRack(x, z, armCols) {
     const g = new THREE.Group();
     const steel = this._mat(0x6f8197, 0.4, 0.7);
+    const railM = this._mat(0x2f3540, 0.5, 0.4);
     const w = 1.6, h = 3.2, d = 18;
     for (const sx of [-w / 2, w / 2]) for (const sz of [-d / 2, 0, d / 2]) {
       const p = this._box(0.12, h, 0.12, steel); p.position.set(sx, h / 2, sz); g.add(p);
@@ -21335,6 +21336,11 @@ class Component extends DCLogic {
     for (let s = 0; s < 5; s++) {
       const sh = this._box(w, 0.06, d, steel); sh.position.set(0, 0.5 + s * 0.64, 0); g.add(sh);
       for (let c = 0; c < 7; c++) {
+        const cz = -d / 2 + 1.5 + c * (d - 3) / 6;
+        if (armCols && armCols.includes(c) && s >= 1 && s <= 3) {      // robot-served slot: kept free, tray rails for the fork
+          for (const rz of [-0.27, 0.27]) { const rl = this._box(1.4, 0.04, 0.07, railM); rl.position.set(0, 0.55 + s * 0.64, cz + rz); g.add(rl); }
+          continue;
+        }
         if (Math.random() > 0.22) {
           const tr = this._tray(s % 2 ? 0xc9b6f5 : 0x9fe6ff);
           tr.scale.set(0.78, 0.78, 0.78);
@@ -21572,19 +21578,18 @@ class Component extends DCLogic {
     // Gibotech arms flanking the sterile storage racks
     const r = this._room('storage');
     const armDefs = [
-      { x: r.cx - 7, z: r.cz - 8,  tag: 'GA-1', name: 'Gibotech CSSD arm \u00b7 GA-1', desc: 'Six-axis pick-and-place arm loading and retrieving sterile trays from the high-density racks against the live OR schedule.', metrics: [{ k: 'Reach', v: '1.8 m' }, { k: 'Payload', v: '12 kg' }, { k: 'Cycle', v: '11 s' }, { k: 'Uptime', v: '100%' }] },
-      { x: r.cx - 7, z: r.cz + 8,  tag: 'GA-2', name: 'Gibotech CSSD arm \u00b7 GA-2', desc: 'Six-axis pick-and-place arm loading and retrieving sterile trays from the high-density racks against the live OR schedule.', metrics: [{ k: 'Reach', v: '1.8 m' }, { k: 'Payload', v: '12 kg' }, { k: 'Cycle', v: '11 s' }, { k: 'Uptime', v: '99.8%' }] },
-      { x: -21.5, z: -9.2,         tag: 'GA-3', name: 'Decanting arm \u00b7 GA-3', desc: 'Six-axis arm at the soiled-decanting station: lifts instrument trays off inbound case carts and indexes them onto the sortation conveyor feeding decontam.', metrics: [{ k: 'Reach', v: '1.8 m' }, { k: 'Payload', v: '12 kg' }, { k: 'Cycle', v: '9 s' }, { k: 'Trays/h', v: '380' }] },
-      { x: -14.5, z: -9.2,         tag: 'GA-4', name: 'Decanting arm \u00b7 GA-4', desc: 'Six-axis arm at the soiled-decanting station: pairs with GA-3 to break down high-volume carts and balance flow into the cart-wash tunnel.', metrics: [{ k: 'Reach', v: '1.8 m' }, { k: 'Payload', v: '12 kg' }, { k: 'Cycle', v: '9 s' }, { k: 'Trays/h', v: '380' }] },
+      { x: r.cx - 7.8, z: r.cz - 8, rackX: r.cx - 5.2, slotZ: r.cz - 7.5, stageDir: -1, tag: 'GA-1', name: 'Gibotech CSSD arm \u00b7 GA-1', desc: 'Six-axis pick-and-place arm loading and retrieving sterile trays from the high-density racks against the live OR schedule.', metrics: [{ k: 'Reach', v: '1.8 m' }, { k: 'Payload', v: '12 kg' }, { k: 'Cycle', v: '11 s' }, { k: 'Uptime', v: '100%' }] },
+      { x: r.cx - 7.8, z: r.cz + 8, rackX: r.cx - 5.2, slotZ: r.cz + 7.5, stageDir: 1, tag: 'GA-2', name: 'Gibotech CSSD arm \u00b7 GA-2', desc: 'Six-axis pick-and-place arm loading and retrieving sterile trays from the high-density racks against the live OR schedule.', metrics: [{ k: 'Reach', v: '1.8 m' }, { k: 'Payload', v: '12 kg' }, { k: 'Cycle', v: '11 s' }, { k: 'Uptime', v: '99.8%' }] },
+      { x: -21.5, z: -9.2, convZ: -7.3, beltEnd: -10.4, tag: 'GA-3', name: 'Decanting arm \u00b7 GA-3', desc: 'Six-axis arm at the soiled-decanting station: lifts instrument trays off inbound case carts and indexes them onto the sortation conveyor feeding decontam.', metrics: [{ k: 'Reach', v: '1.8 m' }, { k: 'Payload', v: '12 kg' }, { k: 'Cycle', v: '9 s' }, { k: 'Trays/h', v: '380' }] },
+      { x: -14.5, z: -9.2, convZ: -7.3, beltEnd: -10.4, tag: 'GA-4', name: 'Decanting arm \u00b7 GA-4', desc: 'Six-axis arm at the soiled-decanting station: pairs with GA-3 to break down high-volume carts and balance flow into the cart-wash tunnel.', metrics: [{ k: 'Reach', v: '1.8 m' }, { k: 'Payload', v: '12 kg' }, { k: 'Cycle', v: '9 s' }, { k: 'Trays/h', v: '380' }] },
     ];
     armDefs.forEach((d, i) => {
-      const arm = this._gibArm();
-      arm.position.set(d.x, 0, d.z);
-      if (i >= 2) arm.rotation.y = Math.PI / 2;
+      // each arm is a working cell: storage arms fork trays between staging and rack, decanting arms unload carts onto the conveyor
+      const arm = i < 2 ? this._storageCell(d) : this._decantCell(d);
       scene.add(arm);
-      this._anim.arms.push({ obj: arm, phase: i * 1.4 });
+      this._anim.arms.push({ obj: arm });
       const ring = this._selRing(arm, 1.5, 0x22d3ee, 0.05);
-      this._addPick(arm, 'arm-' + (i + 1), 2.4, 5.8, 2.4, 0, 2.9, 0);
+      this._addPick(arm, 'arm-' + (i + 1), 2.4, 3.6, 2.4, 0, 1.8, 0);
       this._registerAsset('arm-' + (i + 1), { tag: d.tag, kindLabel: 'ROBOTIC ARM', name: d.name, accent: '#7fe6ff', desc: d.desc, metrics: d.metrics }, [this._ringFn(ring)]);
     });
     // humanoid co-bots across prep, decon, wash, soiled
@@ -22067,8 +22072,9 @@ class Component extends DCLogic {
     const cellTray = this._instrTray(benchX, 1.16, benchZ - 0.1);
     this._detailGroup.add(cellTray);
     const cell = this._dualArmCell(0x35c2ff);
-    cell.position.set(benchX, 1.06, benchZ + 1.5); cell.rotation.y = Math.PI;
+    cell.position.set(benchX, 1.1, benchZ + 0.78); cell.rotation.y = Math.PI;
     scene.add(cell);
+    this._dualArmWire(cell, cellTray);
     this._anim.dualArms.push({ obj: cell, phase: 0 });
     this._regAgentUnit(cell, 'cell-1', 1.9, 3.1, 0x35c2ff, {
       tag: 'DA-01', kindLabel: 'DUAL-ARM CELL', name: 'Inspection & assembly cell \u00b7 DA-01',
@@ -22196,13 +22202,7 @@ class Component extends DCLogic {
     for (const sx of [-convLen / 2 + 0.4, convLen / 2 - 0.4]) { const leg = this._box(0.16, 0.62, 0.16, this._mat(0x6f8197, 0.4, 0.6)); leg.position.set(sx, 0.31, convZ); g.add(leg); }
     const rail = this._box(convLen, 0.06, 0.05, this._emat(0x7fe6ff, 0.9)); rail.position.set(0, 0.8, convZ + 0.5); g.add(rail);
     this._anim.pulsers.push({ mat: rail.material, base: 0.6, amp: 0.35, spd: 1.4 });
-    // trays riding the conveyor (reuse convTrays animator)
-    for (let i = 0; i < 5; i++) {
-      const tr = this._tray(i % 2 ? 0x9fe6ff : 0xf4d08a); tr.scale.set(0.7, 0.7, 0.7);
-      tr.position.set(-convLen / 2 + i * (convLen / 5), 0.82, convZ); g.add(tr);
-      this._anim.convTrays.push({ obj: tr, off: i / 5, len: convLen, baseX: cx, z: convZ });
-      tr.userData._intakeConv = true;
-    }
+    // trays on this belt are placed by the decanting arms GA-3 / GA-4 (see _decantCell)
     // directional flow arrows on the floor (toward decontam)
     for (let i = 0; i < 4; i++) {
       const ar = this._box(0.6, 0.02, 0.18, this._emat(0x35c2ff, 0.8)); ar.position.set(-convLen / 2 + 2 + i * 4, 0.16, convZ - 1.0); g.add(ar);
@@ -22300,11 +22300,13 @@ class Component extends DCLogic {
     const pan = this._box(1.7, 0.12, 1.05, this._mat(0x9fb0c6, 0.25, 0.85)); pan.position.y = 0.06; g.add(pan);
     const inner = this._box(1.5, 0.04, 0.9, this._mat(0x4a5a72, 0.4, 0.5)); inner.position.y = 0.1; g.add(inner);
     const steel = this._mat(0xd6deea, 0.2, 0.92);
+    g.userData.inst = [];
     for (let i = 0; i < 7; i++) {
-      const inst = this._box(0.04, 0.03, 0.62 + Math.random() * 0.2, steel);
-      inst.position.set(-0.6 + i * 0.18, 0.14, -0.05 + (i % 2 ? 0.08 : -0.08));
-      inst.rotation.y = (Math.random() - 0.5) * 0.2; g.add(inst);
-      const ring = this._cyl(0.05, 0.05, 0.015, steel, 10); ring.position.set(inst.position.x, 0.15, inst.position.z + 0.34); g.add(ring);
+      const ig = new THREE.Group();
+      const inst = this._box(0.04, 0.03, 0.62 + Math.random() * 0.2, steel); ig.add(inst);
+      const ring = this._cyl(0.05, 0.05, 0.015, steel, 10); ring.position.set(0, 0.01, 0.34); ig.add(ring);
+      ig.position.set(-0.6 + i * 0.18, 0.14, -0.05 + (i % 2 ? 0.08 : -0.08));
+      ig.rotation.y = (Math.random() - 0.5) * 0.2; g.add(ig); g.userData.inst.push(ig);
     }
     g.position.set(x, y, z);
     return g;
@@ -22807,13 +22809,7 @@ class Component extends DCLogic {
     if (this._midCarousels) this._midCarousels.forEach(c => { c.obj.rotation.y += dt * c.spd * c.dir * mv; });
 
     // arms (frozen while paused — hold pose)
-    if (this._playing) this._anim.arms.forEach(a => {
-      const u = a.obj.userData; const ph = t * 0.7 * this._speed + a.phase;
-      u.turret.rotation.y = Math.sin(ph) * 0.7;
-      u.shoulder.rotation.x = -0.5 + Math.sin(ph * 1.1) * 0.35;
-      u.elbow.rotation.x = 0.8 + Math.cos(ph * 1.1) * 0.4;
-      u.wrist.rotation.x = Math.sin(ph * 1.3) * 0.3;
-    });
+    this._updateArmCells(dt * mv);
 
     // humanoids subtle motion (frozen while paused)
     if (this._playing) this._anim.humans.forEach(h => {
@@ -22860,12 +22856,7 @@ class Component extends DCLogic {
       tw.bneck.scale.set(bs, 1, bs);
     }
     // dual-arm inspection cells — opposed reaching + head pan
-    if (this._playing) this._anim.dualArms.forEach(d => {
-      const u = d.obj.userData; const ph = t * 1.1 * this._speed + d.phase;
-      if (u.armR) { u.armR.sh.rotation.x = 1.0 + Math.sin(ph) * 0.22; u.armR.el.rotation.x = 0.9 + Math.cos(ph * 1.2) * 0.25; }
-      if (u.armL) { u.armL.sh.rotation.x = 1.0 + Math.sin(ph + Math.PI) * 0.22; u.armL.el.rotation.x = 0.9 + Math.cos(ph * 1.2 + Math.PI) * 0.25; }
-      if (u.head) u.head.rotation.y = Math.sin(ph * 0.7) * 0.3;
-    });
+    // (DA-01 dual-arm cell runs through _updateArmCells above)
     // human staff — subtle hand/breathing motion
     if (this._playing) this._anim.staff.forEach(s => {
       const u = s.obj.userData; const ph = t * 1.0 + s.phase;
@@ -23633,27 +23624,370 @@ class Component extends DCLogic {
   }
 
   // ---------- 6-axis collaborative arm ----------
-  _gibArm() {
+  // ================= SIX-AXIS COBOT (UR20-class proportions, scene scale ≈ 1.55 u per metre) =================
+  // Chain: root → j1 (base yaw) → j2 shoulder → j3 elbow → j4 wrist-1 → j6 tool roll → tool.
+  // Pitch joints turn about local X and every link runs along local +Z, so an up-positive angle q maps to rotation.x = -q.
+  _roundCyl(r, len, bev, m, seg) {
+    const b = Math.min(bev, r * 0.45, len * 0.45), n = 5, pts = [new THREE.Vector2(0, -len / 2)];
+    for (let i = 0; i <= n; i++) { const a = -Math.PI / 2 + (i / n) * Math.PI / 2; pts.push(new THREE.Vector2(r - b + Math.cos(a) * b, -len / 2 + b + Math.sin(a) * b)); }
+    for (let i = 0; i <= n; i++) { const a = (i / n) * Math.PI / 2; pts.push(new THREE.Vector2(r - b + Math.cos(a) * b, len / 2 - b + Math.sin(a) * b)); }
+    pts.push(new THREE.Vector2(0, len / 2));
+    const o = new THREE.Mesh(new THREE.LatheGeometry(pts, seg || 40), m); o.castShadow = true; o.receiveShadow = true; return o;
+  }
+  // cast-style link tube along +Z (0..len) that flares into the joint housings at both ends
+  _armLink(r, len, m) {
+    const f = r * 1.2, e = Math.min(len * 0.14, r * 1.6);
+    const pts = [new THREE.Vector2(0, 0), new THREE.Vector2(f, 0), new THREE.Vector2(f, e * 0.22), new THREE.Vector2(r * 1.06, e * 0.7), new THREE.Vector2(r, e),
+      new THREE.Vector2(r, len - e), new THREE.Vector2(r * 1.06, len - e * 0.7), new THREE.Vector2(f, len - e * 0.22), new THREE.Vector2(f, len), new THREE.Vector2(0, len)];
+    const geo = new THREE.LatheGeometry(pts, 40); geo.rotateX(Math.PI / 2);
+    const o = new THREE.Mesh(geo, m); o.castShadow = true; o.receiveShadow = true; return o;
+  }
+  // joint housing: filleted drum + dark end caps + LED ring on the outer cap. side=+1 puts the ring on +axis.
+  _jointPod(r, len, axis, side, shell, cap, acc) {
     const g = new THREE.Group();
-    const tube = this._rawmat(0xd9dde2, 0.4, 0.3), cap = this._rawmat(0x7fa8c9, 0.35, 0.4), dark = this._rawmat(0x2b2f36, 0.5, 0.3);
-    const base = this._cyl(0.75, 0.9, 0.5, dark, 28); base.position.y = 0.25; base.castShadow = true; g.add(base);
-    const turret = this._cyl(0.52, 0.56, 0.5, tube, 24); turret.position.y = 0.72; turret.castShadow = true; g.add(turret);
-    const shoulder = new THREE.Group(); shoulder.position.y = 0.95; g.add(shoulder);
-    const sj = this._cyl(0.46, 0.46, 0.72, cap, 24); sj.rotation.z = Math.PI / 2; sj.castShadow = true; shoulder.add(sj);
-    const upper = this._capsule(0.3, 2.3, tube, 20); upper.position.y = 1.3; shoulder.add(upper);
-    const elbow = new THREE.Group(); elbow.position.y = 2.6; shoulder.add(elbow);
-    const ej = this._cyl(0.4, 0.4, 0.64, cap, 24); ej.rotation.z = Math.PI / 2; ej.castShadow = true; elbow.add(ej);
-    const fore = this._capsule(0.25, 1.9, tube, 20); fore.position.y = 1.1; elbow.add(fore);
-    const wrist = new THREE.Group(); wrist.position.y = 2.2; elbow.add(wrist);
-    const w1 = this._cyl(0.3, 0.3, 0.52, cap, 20); w1.rotation.z = Math.PI / 2; wrist.add(w1);
-    const w2 = this._cyl(0.26, 0.26, 0.3, tube, 20); w2.position.y = 0.05; wrist.add(w2);
-    const grip = this._rbox(0.7, 0.26, 0.5, 0.11, dark); grip.position.y = 0.2; wrist.add(grip);
-    const tipM = this._led(0x22d3ee, 0.9);
-    for (const sx of [-0.25, 0.25]) { const f = this._rbox(0.1, 0.4, 0.1, 0.04, tipM); f.position.set(sx, -0.1, 0); wrist.add(f); }
-    g.userData = { turret, shoulder, elbow, wrist };
+    g.add(this._roundCyl(r, len, r * 0.24, shell, 44));
+    for (const s of [-1, 1]) { const c = this._roundCyl(r * 0.84, 0.03, 0.012, cap, 40); c.position.y = s * (len / 2 + 0.004); g.add(c); }
+    if (acc) { const ring = new THREE.Mesh(new THREE.TorusGeometry(r * 0.58, Math.max(0.006, r * 0.04), 8, 40), acc); ring.rotation.x = Math.PI / 2; ring.position.y = len / 2 + 0.021; g.add(ring); }
+    if (axis === 'x') g.rotation.z = side > 0 ? -Math.PI / 2 : Math.PI / 2;
+    else if (axis === 'z') g.rotation.x = side > 0 ? Math.PI / 2 : -Math.PI / 2;
+    else if (side < 0) g.rotation.x = Math.PI;
     return g;
   }
 
+  _cobot(opts) {
+    const o = Object.assign({ P: 0.55, d1: 0.37, a2: 1.34, a3: 1.13, s: 1, tool: 'jaw', accent: 0x22d3ee, pedestal: true, jaw: null }, opts || {});
+    const s = o.s, T = THREE;
+    const shell = this._rawmat(0xe6e9ed, 0.36, 0.06), shell2 = this._rawmat(0xd2d7de, 0.42, 0.08);
+    const cap = this._rawmat(0x2b3c55, 0.42, 0.3);                       // blue-grey end caps
+    const steel = this._rawmat(0xb4bcc6, 0.28, 0.8), alu = this._rawmat(0xc9cfd6, 0.34, 0.6);
+    const dark = this._rawmat(0x22262c, 0.55, 0.3), rubber = this._rawmat(0x15181c, 0.85, 0.02);
+    const acc = this._led(o.accent, 0.9);
+    const root = new T.Group();
+    if (o.pedestal && o.P > 0.05) {                                         // welded plinth bolted to the floor
+      const plate = this._rbox(0.96, 0.05, 0.96, 0.08, dark); plate.position.y = 0.025; plate.receiveShadow = true; root.add(plate);
+      const col = this._rbox(0.6, o.P - 0.1, 0.6, 0.05, this._rawmat(0x3a424e, 0.5, 0.45)); col.position.y = 0.05 + (o.P - 0.1) / 2; col.castShadow = true; root.add(col);
+      const top = this._roundCyl(0.36, 0.05, 0.015, steel, 40); top.position.y = o.P - 0.025; root.add(top);
+      for (let i = 0; i < 4; i++) { const a = Math.PI / 4 + i * Math.PI / 2; const b = this._cyl(0.028, 0.028, 0.03, steel, 10); b.position.set(Math.cos(a) * 0.4, 0.065, Math.sin(a) * 0.4); root.add(b); }
+      const tag = this._rbox(0.16, 0.035, 0.01, 0.012, acc); tag.position.set(0, o.P * 0.72, 0.305); root.add(tag);
+    }
+    // J1: fixed stator with status ring, rotating drum up to the shoulder
+    const r1 = 0.24 * s;
+    const stator = this._roundCyl(r1 * 1.1, 0.13 * s, 0.03 * s, shell2, 48); stator.position.y = o.P + 0.065 * s; root.add(stator);
+    const led = new T.Mesh(new T.TorusGeometry(r1 * 1.11, 0.011 * s, 8, 60), acc); led.rotation.x = Math.PI / 2; led.position.y = o.P + 0.02 * s; root.add(led);
+    this._anim.pulsers.push({ mat: acc, base: 0.9, amp: 0.35, spd: 1.3 });
+    const j1 = new T.Group(); j1.position.y = o.P; root.add(j1);
+    const drum = this._roundCyl(r1, o.d1 - 0.12 * s, 0.03 * s, shell, 44); drum.position.y = 0.13 * s + (o.d1 - 0.12 * s) / 2 - 0.005; j1.add(drum);
+    // J2 shoulder: housing offset to +X, upper-arm tube leaves from its side
+    const j2 = new T.Group(); j2.position.y = o.d1; j1.add(j2);
+    const sPod = this._jointPod(0.25 * s, 0.5 * s, 'x', -1, shell, cap, acc); sPod.position.x = 0.12 * s; j2.add(sPod);
+    const upper = this._armLink(0.165 * s, o.a2, shell); upper.position.x = 0.24 * s; j2.add(upper);
+    // J3 elbow
+    const j3 = new T.Group(); j3.position.z = o.a2; j2.add(j3);
+    const ePod = this._jointPod(0.21 * s, 0.46 * s, 'x', 1, shell, cap, acc); ePod.position.x = 0.15 * s; j3.add(ePod);
+    const fore = this._armLink(0.125 * s, o.a3, shell); fore.position.x = 0.04 * s; j3.add(fore);
+    // cable loom along the forearm
+    const loom = this._cyl(0.022 * s, 0.022 * s, o.a3 * 0.7, dark, 10); loom.rotation.x = Math.PI / 2; loom.position.set(0.04 * s, 0.14 * s, o.a3 * 0.5); j3.add(loom);
+    // wrist: J4 (axis X) → J5 (axis Y) → J6 (axis Z, tool roll)
+    const lat = 0.30 * s, w5 = 0.34 * s, w6 = 0.19 * s;
+    const j4 = new T.Group(); j4.position.z = o.a3; j3.add(j4);
+    const w1 = this._jointPod(0.15 * s, 0.36 * s, 'x', -1, shell, cap, acc); w1.position.x = 0.12 * s; j4.add(w1);
+    const w2 = this._jointPod(0.14 * s, 0.3 * s, 'y', 1, shell, cap, acc); w2.position.set(lat, 0, 0.16 * s); j4.add(w2);
+    const j6 = new T.Group(); j6.position.set(lat, 0, w5); j4.add(j6);
+    const w3 = this._jointPod(0.13 * s, 0.16 * s, 'z', 1, shell, cap, null); w3.position.z = 0.06 * s; j6.add(w3);
+    const flange = this._roundCyl(0.1 * s, 0.035 * s, 0.01 * s, steel, 36); flange.rotation.x = Math.PI / 2; flange.position.z = 0.16 * s; j6.add(flange);
+    const tool = new T.Group(); tool.position.z = w6; j6.add(tool);
+    // ---- end effectors ----
+    let tref = 0.44 * s, fingers = [], gOpen = 0, gClosed = 0;
+    if (o.tool === 'fork') {
+      // tray fork: back plate + two tines that slide under the tray (tool stays level)
+      const ad = this._roundCyl(0.085, 0.05, 0.012, alu, 30); ad.rotation.x = Math.PI / 2; ad.position.z = 0.025; tool.add(ad);
+      const plate = this._rbox(0.64, 0.3, 0.05, 0.03, dark); plate.position.set(0, 0.05, 0.075); tool.add(plate);
+      const brand = this._rbox(0.34, 0.035, 0.01, 0.01, acc); brand.position.set(0, 0.16, 0.1); tool.add(brand);
+      for (const x of [-0.13, 0.13]) {
+        const tine = this._rbox(0.06, 0.035, 0.8, 0.012, alu); tine.position.set(x, 0, 0.5); tine.castShadow = true; tool.add(tine);
+        const tip = this._rbox(0.062, 0.02, 0.06, 0.01, rubber); tip.position.set(x, 0.018, 0.86); tool.add(tip);
+      }
+      const sensor = this._cyl(0.018, 0.018, 0.02, acc, 10); sensor.rotation.x = Math.PI / 2; sensor.position.set(0, -0.06, 0.105); tool.add(sensor);
+      tref = 0.5;
+    } else {
+      // long-stroke parallel gripper on a linear guide
+      const J = Object.assign({ open: 0.53, closed: 0.415, fl: 0.34, fw: 0.05, body: 1.16 }, o.jaw || {});
+      const k = J.fl / 0.34;
+      const ad = this._roundCyl(0.085 * s, 0.05 * s, 0.012 * s, alu, 30); ad.rotation.x = Math.PI / 2; ad.position.z = 0.025 * s; tool.add(ad);
+      const body = this._rbox(0.22 * k, 0.16 * k, 0.14 * k, 0.03 * k, dark); body.position.z = 0.11 * k; tool.add(body);
+      const guide = this._rbox(J.body, 0.06 * k, 0.07 * k, 0.02 * k, alu); guide.position.z = 0.17 * k; tool.add(guide);
+      const stripe = this._rbox(0.16 * k, 0.03 * k, 0.012 * k, 0.008 * k, acc); stripe.position.set(0, 0, 0.04 * k); stripe.position.y = 0.082 * k; tool.add(stripe);
+      for (const sx of [-1, 1]) {
+        const fg = new T.Group(); fg.position.x = sx * J.open; tool.add(fg);
+        const carriage = this._rbox(J.fw * 1.8, 0.11 * k, 0.07 * k, 0.015 * k, steel); carriage.position.z = 0.17 * k; fg.add(carriage);
+        const finger = this._rbox(J.fw, 0.12 * k, J.fl, 0.012 * k, alu); finger.position.z = 0.19 * k + J.fl / 2; finger.castShadow = true; fg.add(finger);
+        const pad = this._rbox(0.012 * k, 0.1 * k, J.fl * 0.4, 0.004, rubber); pad.position.set(-sx * (J.fw / 2 + 0.004), 0, 0.19 * k + J.fl * 0.75); fg.add(pad);
+        fg.userData.sx = sx; fingers.push(fg);
+      }
+      tref = 0.19 * k + J.fl * 0.74; gOpen = J.open; gClosed = J.closed;
+    }
+    const kin = { root, j1, j2, j3, j4, j6, tool, a2: o.a2, a3: o.a3, lat, sh: o.P + o.d1, Lt: w5 + w6 + tref, fingers, gOpen, gClosed, th: 0, spin: 0 };
+    kin.setGrip = (g) => { kin.grip = g; fingers.forEach(f => { f.position.x = f.userData.sx * (gOpen + (gClosed - gOpen) * g); }); };
+    root.userData.kin = kin;
+    return root;
+  }
+
+  // planar IK with base-yaw compensation for the wrist's lateral offset. p is in the arm root's frame; phi is tool pitch (0 level, -π/2 down)
+  _armIK(k, p, phi, out) {
+    const f = Math.sqrt(Math.max(p.x * p.x + p.z * p.z - k.lat * k.lat, 1e-6));
+    out.q1 = Math.atan2(p.x, p.z) - Math.atan2(k.lat, f);
+    let wx = f - k.Lt * Math.cos(phi), wy = (p.y - k.sh) - k.Lt * Math.sin(phi), d = Math.hypot(wx, wy);
+    const maxR = k.a2 + k.a3 - 1e-4, minR = Math.abs(k.a2 - k.a3) + 1e-3;
+    if (d > maxR) { wx *= maxR / d; wy *= maxR / d; d = maxR; } else if (d < minR) { const sc = minR / Math.max(d, 1e-6); wx *= sc; wy *= sc; d = minR; }
+    const c3 = (d * d - k.a2 * k.a2 - k.a3 * k.a3) / (2 * k.a2 * k.a3);
+    out.q3 = -Math.acos(Math.max(-1, Math.min(1, c3)));                               // elbow-up
+    out.q2 = Math.atan2(wy, wx) - Math.atan2(k.a3 * Math.sin(out.q3), k.a2 + k.a3 * Math.cos(out.q3));
+    out.q4 = phi - out.q2 - out.q3;
+    return out;
+  }
+  _armApply(k, q) { k.j1.rotation.y = q.q1; k.j2.rotation.x = -q.q2; k.j3.rotation.x = -q.q3; k.j4.rotation.x = -q.q4; }
+  // with the tool pointing down, roll J6 so the jaw axis (tool X) lies along a world heading; keeps the carried part square
+  _armAlignYaw(k, yaw) {
+    const T = THREE; this._aq = this._aq || new T.Quaternion(); this._av = this._av || new T.Vector3();
+    k.j6.rotation.z = 0; k.root.updateMatrixWorld(true);
+    k.j6.getWorldQuaternion(this._aq); const ex = this._av.set(1, 0, 0).applyQuaternion(this._aq);
+    let th = Math.atan2(-ex.z, ex.x) - yaw;
+    th = th + Math.round((k.th - th) / Math.PI) * Math.PI;                             // stay on the branch nearest the last roll
+    k.th = th; k.j6.rotation.z = th + k.spin;
+  }
+
+  // ---------- motion player: queued waypoints, joint (smootherstep) or linear Cartesian moves ----------
+  _cellInit(cell, homeP, homePhi) {
+    const k = cell.k; cell.q = { q1: 0, q2: 0, q3: 0, q4: 0 }; cell.pose = { p: new THREE.Vector3(...homeP), phi: homePhi };
+    this._armIK(k, cell.pose.p, homePhi, cell.q); this._armApply(k, cell.q); k.setGrip(0);
+    if (cell.yaw != null) this._armAlignYaw(k, cell.yaw);
+    cell.queue = []; cell.cur = null;
+    (this._armCells = this._armCells || []).push(cell);
+  }
+  _cellTick(cell, dt) {
+    const k = cell.k;
+    if (!cell.cur) {
+      if (!cell.queue.length) cell.queue = cell.plan();
+      const st = cell.queue.shift(); st.t = 0;
+      if (st.wait && st.wait()) { cell.queue.unshift(st); return; }                  // interlock: hold until clear
+      st.p0 = cell.pose.p.clone(); st.phi0 = cell.pose.phi; st.g0 = k.grip; st.q0 = Object.assign({}, cell.q);
+      if (st.to) { const tt = st.to(); st.p1 = new THREE.Vector3(...tt.p); st.phi1 = tt.phi; st.q1 = this._armIK(k, st.p1, st.phi1, {}); }
+      if (st.start) st.start();
+      cell.cur = st;
+    }
+    const st = cell.cur; st.t += dt;
+    const u = Math.min(1, st.t / st.dur), e = u * u * u * (u * (u * 6 - 15) + 10);
+    if (st.to && st.mode === 'joint') {
+      let d1 = st.q1.q1 - st.q0.q1; d1 = Math.atan2(Math.sin(d1), Math.cos(d1));
+      cell.q.q1 = st.q0.q1 + d1 * e; cell.q.q2 = st.q0.q2 + (st.q1.q2 - st.q0.q2) * e; cell.q.q3 = st.q0.q3 + (st.q1.q3 - st.q0.q3) * e; cell.q.q4 = st.q0.q4 + (st.q1.q4 - st.q0.q4) * e;
+      if (u >= 1) { cell.pose.p.copy(st.p1); cell.pose.phi = st.phi1; }
+    } else if (st.to) {
+      cell.pose.p.lerpVectors(st.p0, st.p1, e); cell.pose.phi = st.phi0 + (st.phi1 - st.phi0) * e;
+      this._armIK(k, cell.pose.p, cell.pose.phi, cell.q);
+    }
+    if (st.grip != null) k.setGrip(st.g0 + (st.grip - st.g0) * e);
+    if (st.during) st.during(u);
+    this._armApply(k, cell.q);
+    if (cell.yaw != null) this._armAlignYaw(k, typeof cell.yaw === 'function' ? cell.yaw() : cell.yaw);
+    if (u >= 1) { const fin = st.end; cell.cur = null; if (fin) fin(); }
+  }
+  _updateArmCells(dt) {
+    if (this._armCells) this._armCells.forEach(c => {
+      this._cellTick(c, dt);
+      if (c.stack) c.stack.forEach(t => {                                           // restocked trays ease in (cart swapped while the arm works the belt)
+        if (t.userData.grow == null) return;
+        t.userData.grow = Math.min(1, t.userData.grow + dt * 1.8); const g = 0.7 * t.userData.grow; t.scale.set(g, g, g);
+        if (t.userData.grow >= 1) delete t.userData.grow;
+      });
+      if (c.tick) c.tick(dt);
+    });
+    if (this._beltRiders) {
+      for (let i = this._beltRiders.length - 1; i >= 0; i--) {
+        const r = this._beltRiders[i]; r.obj.position.x += dt * 0.9;
+        if (r.obj.parent.position.x + r.obj.position.x > r.endX) { r.obj.visible = false; r.cell.pool.push(r.obj); this._beltRiders.splice(i, 1); }
+      }
+    }
+  }
+
+  // ---------- GA-1 / GA-2: sterile storage put-away & retrieval with a tray fork ----------
+  // Staging table beside the arm (inbound from the sterilizers / outbound to case-cart build) ↔ empty slots in the first HD rack.
+  _storageCell(d) {
+    const T = THREE, G = new T.Group(); G.position.set(d.x, 0, d.z);
+    const arm = this._cobot({ tool: 'fork', P: 0.55 }); G.add(arm);
+    const k = arm.userData.kin;
+    // staging table: two support rails so the fork tines can slide under the tray
+    const sd = d.stageDir, stage = new T.Vector3(0, 1.162, sd * 2.6);
+    const st = new T.Group(); st.position.set(0, 0, stage.z); G.add(st);
+    const frameM = this._rawmat(0x6f7c8c, 0.4, 0.6), topM = this._rawmat(0xb9c3cf, 0.32, 0.7), railM = this._rawmat(0x2f3540, 0.5, 0.4);
+    const top = this._rbox(1.0, 0.04, 1.3, 0.04, topM); top.position.y = 1.04; top.castShadow = true; top.receiveShadow = true; st.add(top);
+    for (const x of [-0.42, 0.42]) for (const z of [-0.56, 0.56]) { const leg = this._box(0.06, 1.02, 0.06, frameM); leg.position.set(x, 0.51, z); st.add(leg); }
+    for (const x of [-0.27, 0.27]) { const rl = this._rbox(0.07, 0.04, 1.2, 0.01, railM); rl.position.set(x, 1.08, 0); st.add(rl); }
+    const lamp = this._box(0.86, 0.03, 0.04, this._led(0x34d399, 0.8)); lamp.position.set(0, 1.04, -sd * 0.66); st.add(lamp);
+    // the tray this cell shuttles
+    const tray = this._tray(0x9fe6ff); tray.scale.set(0.78, 0.78, 0.78); tray.position.copy(stage); G.add(tray);
+    const rack = new T.Vector3(d.rackX - d.x, 0, d.slotZ - d.z);
+    const slotY = s => 0.6324 + s * 0.64;
+    const cell = { k, G, yaw: null };
+    const UP = 0.13, CONTACT = 0.08, LIFT = 0.01;                                       // fork ref below the tray centre
+    const P = (v, dy, back, dir) => ({ p: [v.x - dir.x * back, v.y - dy, v.z - dir.z * back], phi: 0 });
+    const dS = new T.Vector3(0, 0, sd), dR = new T.Vector3(1, 0, 0);
+    let shelf = 1, inRack = false;
+    const home = [0.95, 1.95, sd * 0.95];
+    const pick = (src, dir, back) => [
+      { mode: 'joint', dur: 1.6, to: () => P(src, UP, back, dir) },
+      { mode: 'lin', dur: 1.0, to: () => P(src, UP, 0, dir) },
+      { mode: 'lin', dur: 0.35, to: () => P(src, CONTACT, 0, dir), end: () => k.tool.attach(tray) },
+      { mode: 'lin', dur: 0.45, to: () => P(src, LIFT, 0, dir) },
+      { mode: 'lin', dur: 1.0, to: () => P(src, LIFT, back, dir) }];
+    const place = (dst, dir, back) => [
+      { mode: 'joint', dur: 1.8, to: () => P(dst, LIFT, back, dir) },
+      { mode: 'lin', dur: 1.1, to: () => P(dst, LIFT, 0, dir) },
+      { mode: 'lin', dur: 0.4, to: () => P(dst, CONTACT, 0, dir), end: () => { G.attach(tray); tray.position.copy(dst); tray.rotation.set(0, 0, 0); } },
+      { mode: 'lin', dur: 0.3, to: () => P(dst, UP, 0, dir) },
+      { mode: 'lin', dur: 1.0, to: () => P(dst, UP, back, dir) }];
+    cell.plan = () => {
+      const slot = new T.Vector3(rack.x, slotY(shelf), rack.z);
+      let q;
+      if (!inRack) q = [...pick(stage, dS, 0.95), ...place(slot, dR, 1.3)];
+      else { q = [...pick(slot, dR, 1.3), ...place(stage, dS, 0.95)]; shelf = shelf % 3 + 1; }
+      inRack = !inRack;
+      q.push({ mode: 'joint', dur: 1.5, to: () => ({ p: home, phi: 0 }) }, { dur: 1.2 });
+      return q;
+    };
+    this._cellInit(cell, home, 0);
+    return G;
+  }
+
+  // ---------- GA-3 / GA-4: soiled decanting — lift trays off a docked transfer cart onto the intake conveyor ----------
+  _decantCell(d) {
+    const T = THREE, G = new T.Group(); G.position.set(d.x, 0, d.z);
+    const arm = this._cobot({ tool: 'jaw', P: 0.55 }); G.add(arm);
+    const k = arm.userData.kin;
+    // docked low transfer cart (west of the arm)
+    const cx = -1.7, deckY = 0.95;
+    const cart = new T.Group(); cart.position.set(cx, 0, 0); G.add(cart);
+    const ss = this._rawmat(0xc4ccd6, 0.3, 0.75), ssD = this._rawmat(0x8b97a6, 0.4, 0.6), tire = this._rawmat(0x1a1d22, 0.8, 0.05);
+    const deck = this._rbox(1.3, 0.05, 0.92, 0.05, ss); deck.position.y = deckY - 0.025; deck.castShadow = true; deck.receiveShadow = true; cart.add(deck);
+    const lip = this._rbox(1.3, 0.06, 0.03, 0.01, ssD); for (const z of [-0.46, 0.46]) { const l = lip.clone(); l.position.set(0, deckY + 0.02, z); cart.add(l); }
+    const low = this._rbox(1.2, 0.04, 0.84, 0.04, ssD); low.position.y = 0.3; cart.add(low);
+    for (const x of [-0.6, 0.6]) for (const z of [-0.42, 0.42]) {
+      const post = this._cyl(0.025, 0.025, deckY - 0.12, ssD, 10); post.position.set(x, 0.12 + (deckY - 0.12) / 2, z); cart.add(post);
+      const w = this._cyl(0.075, 0.075, 0.05, tire, 16); w.rotation.z = Math.PI / 2; w.position.set(x, 0.075, z); cart.add(w);
+    }
+    const handle = this._cyl(0.022, 0.022, 0.84, ssD, 10); handle.rotation.x = Math.PI / 2; handle.position.set(-0.72, deckY + 0.28, 0); cart.add(handle);
+    for (const z of [-0.42, 0.42]) { const up = this._cyl(0.02, 0.02, 0.3, ssD, 8); up.position.set(-0.68, deckY + 0.13, z); cart.add(up); }
+    const dockLamp = this._box(0.04, 0.03, 0.8, this._led(0xf5b942, 0.8)); dockLamp.position.set(0.66, deckY, 0); cart.add(dockLamp);
+    // stack of soiled instrument trays
+    const TH = 0.112, mk = (i) => { const t = this._tray(i % 2 ? 0xf4d08a : 0x9fe6ff); t.scale.set(0.7, 0.7, 0.7); G.add(t); return t; };
+    const cell = { k, G, yaw: 0, pool: [], stack: [] };
+    const restock = () => {
+      for (let i = 0; i < 3; i++) {
+        const t = cell.pool.pop() || mk(i); t.visible = true; t.rotation.set(0, 0, 0);
+        t.position.set(cx, deckY + TH / 2 + i * TH, 0); t.scale.set(0.001, 0.001, 0.001); t.userData.grow = 0; cell.stack.push(t);
+      }
+    };
+    for (let i = 0; i < 3; i++) { const t = mk(i); t.position.set(cx, deckY + TH / 2 + i * TH, 0); cell.stack.push(t); }
+    const place = new T.Vector3(0, 0.81, d.convZ - d.z), endX = d.beltEnd;
+    this._beltRiders = this._beltRiders || [];
+    const beltBusy = () => this._beltRiders.some(r => Math.abs(r.obj.parent.position.x + r.obj.position.x - (d.x + place.x)) < 1.05);
+    const DN = -Math.PI / 2, home = [-0.85, 1.9, 0.9];
+    let held = null;
+    cell.plan = () => {
+      const top = () => cell.stack[cell.stack.length - 1];
+      const topP = () => { const t = top(); return [t.position.x, t.position.y, t.position.z]; };
+      return [
+        { mode: 'joint', dur: 1.4, grip: 0, to: () => { const p = topP(); return { p: [p[0], p[1] + 0.42, p[2]], phi: DN }; } },
+        { mode: 'lin', dur: 0.7, to: () => ({ p: topP(), phi: DN }) },
+        { dur: 0.35, grip: 1, end: () => { held = cell.stack.pop(); k.tool.attach(held); } },
+        { mode: 'lin', dur: 0.6, to: () => ({ p: [cx, deckY + 0.95, 0], phi: DN }) },
+        { mode: 'joint', dur: 1.5, to: () => ({ p: [place.x, place.y + 0.5, place.z], phi: DN }) },
+        { dur: 0.15, wait: beltBusy },
+        { mode: 'lin', dur: 0.7, to: () => ({ p: [place.x, place.y, place.z], phi: DN }) },
+        { dur: 0.3, grip: 0, end: () => {
+          G.attach(held); held.position.copy(place); held.rotation.set(0, 0, 0);
+          this._beltRiders.push({ obj: held, cell, endX }); held = null;
+          if (!cell.stack.length) restock();
+        } },
+        { mode: 'lin', dur: 0.5, to: () => ({ p: [place.x, place.y + 0.5, place.z], phi: DN }) },
+        { mode: 'joint', dur: 1.2, to: () => ({ p: home, phi: DN }) },
+        { dur: 0.5 }];
+    };
+    this._cellInit(cell, home, DN);
+    return G;
+  }
+
+  // ---------- DA-01: bench-mounted dual-arm inspection cell (YuMi-class) with overhead vision ----------
+  _dualArmCell(accent) {
+    const T = THREE, g = new T.Group();
+    const shell = this._rawmat(0xe9ecef, 0.36, 0.06), shell2 = this._rawmat(0xd6dbe1, 0.42, 0.08), cap = this._rawmat(0x2b3c55, 0.42, 0.3);
+    const dark = this._rawmat(0x22262c, 0.55, 0.3), alu = this._rawmat(0xc4cbd3, 0.32, 0.65), acc = this._led(accent, 0.85);
+    const plate = this._rbox(0.92, 0.05, 0.58, 0.05, dark); plate.position.y = 0.025; plate.receiveShadow = true; g.add(plate);
+    const lower = this._rbox(0.76, 0.34, 0.5, 0.12, shell); lower.position.y = 0.22; lower.castShadow = true; g.add(lower);
+    const upper = this._rbox(0.64, 0.22, 0.44, 0.1, shell2); upper.position.y = 0.49; upper.castShadow = true; g.add(upper);
+    const screen = this._rbox(0.26, 0.12, 0.012, 0.02, this._rawmat(0x0d1117, 0.25, 0.5)); screen.position.set(0, 0.26, 0.252); g.add(screen);
+    const strip = this._rbox(0.34, 0.025, 0.012, 0.008, acc); strip.position.set(0, 0.4, 0.252); g.add(strip);
+    this._anim.pulsers.push({ mat: acc, base: 0.85, amp: 0.3, spd: 1.6 });
+    const estop = this._cyl(0.035, 0.035, 0.03, this._rawmat(0xc0392b, 0.5, 0.1), 14); estop.position.set(0.28, 0.61, -0.12); g.add(estop);
+    // shoulder mounts + arms
+    const arms = {};
+    for (const sx of [-1, 1]) {
+      const mount = this._rbox(0.16, 0.18, 0.3, 0.05, cap); mount.position.set(sx * 0.4, 0.45, 0); g.add(mount);
+      const arm = this._cobot({ s: 0.4, P: 0, d1: 0.12, a2: 0.52, a3: 0.48, pedestal: false, tool: 'jaw', accent, jaw: { open: 0.07, closed: 0.031, fl: 0.13, fw: 0.022, body: 0.2 } });
+      arm.position.set(sx * 0.47, 0.54, 0.02); g.add(arm);
+      arms[sx > 0 ? 'L' : 'R'] = arm;
+    }
+    // overhead vision: mast behind the torso, boom out over the set tray, down-looking camera with ring light
+    const mast = this._rbox(0.07, 1.12, 0.07, 0.02, alu); mast.position.set(0, 0.62 + 0.56, -0.2); g.add(mast);
+    const boom = this._rbox(0.07, 0.07, 1.2, 0.02, alu); boom.position.set(0, 1.74, 0.36); g.add(boom);
+    const head = this._rbox(0.24, 0.11, 0.18, 0.03, dark); head.position.set(0, 1.67, 0.9); head.castShadow = true; g.add(head);
+    const lens = this._cyl(0.045, 0.05, 0.05, this._rawmat(0x0b0e12, 0.15, 0.6), 20); lens.position.set(0, 1.6, 0.9); g.add(lens);
+    const ringLight = new T.Mesh(new T.TorusGeometry(0.075, 0.012, 8, 40), this._led(0xe8f6ff, 0.6)); ringLight.rotation.x = Math.PI / 2; ringLight.position.set(0, 1.6, 0.9); g.add(ringLight);
+    const scan = new T.Mesh(new T.ConeGeometry(0.26, 0.82, 32, 1, true), new T.MeshBasicMaterial({ color: 0x7fe6ff, transparent: true, opacity: 0, depthWrite: false, side: T.DoubleSide }));
+    scan.position.set(0, 1.6 - 0.41, 0.9); g.add(scan);
+    g.userData = { arms, scan, ringLight };
+    return g;
+  }
+  // wire DA-01 to its set tray: each arm lifts instruments from its half of the tray, turns them under the camera, returns them
+  _dualArmWire(cellG, tray) {
+    const T = THREE, ud = cellG.userData;
+    cellG.updateWorldMatrix(true, true); tray.updateWorldMatrix(true, true);
+    const cam = { busy: null };
+    const rods = tray.userData.inst;
+    const DN = -Math.PI / 2;
+    ['L', 'R'].forEach((side, ai) => {
+      const arm = ud.arms[side], k = arm.userData.kin;
+      const toArm = (wv) => arm.worldToLocal(wv.clone());
+      // this arm takes the instruments on its own side of the tray (centre one stays put)
+      const mine = rods.filter(r => { const x = cellG.worldToLocal(r.getWorldPosition(new T.Vector3())).x; return side === 'L' ? x > 0.12 : x < -0.12; });
+      const homeOf = new Map(rods.map(r => [r, { p: r.position.clone(), ry: r.rotation.y }]));
+      const camPt = toArm(cellG.localToWorld(new T.Vector3(side === 'L' ? 0.1 : -0.1, 0.72, 0.86)));
+      const rest = toArm(cellG.localToWorld(new T.Vector3(side === 'L' ? 0.5 : -0.5, 0.78, 0.42)));
+      const cell = { k, yaw: 0 };
+      let n = ai, held = null;
+      cell.plan = () => {
+        const rod = mine[n % mine.length]; n++;
+        const tgt = () => { const w = tray.localToWorld(homeOf.get(rod).p.clone()); w.y += 0.015; return toArm(w); };
+        const at = (dy) => () => { const p = tgt(); return { p: [p.x, p.y + dy, p.z], phi: DN }; };
+        return [
+          { mode: 'joint', dur: 1.1, grip: 0, to: at(0.2), start: () => { cell.yaw = homeOf.get(rod).ry; } },
+          { mode: 'lin', dur: 0.5, to: at(0) },
+          { dur: 0.25, grip: 1, end: () => { held = rod; k.tool.attach(rod); } },
+          { mode: 'lin', dur: 0.4, to: at(0.2) },
+          { dur: 0.1, wait: () => cam.busy && cam.busy !== cell, end: () => { cam.busy = cell; } },
+          { mode: 'joint', dur: 1.0, to: () => ({ p: [camPt.x, camPt.y, camPt.z], phi: DN }) },
+          { dur: 1.9, during: (u) => { k.spin = Math.sin(u * Math.PI * 2) * 0.85; ud.scan.material.opacity = 0.16 * Math.sin(u * Math.PI); ud.ringLight.material.emissiveIntensity = 0.8 + 1.6 * Math.sin(u * Math.PI); },
+            end: () => { k.spin = 0; ud.scan.material.opacity = 0; } },
+          { mode: 'joint', dur: 1.0, to: at(0.2), end: () => { cam.busy = null; } },
+          { mode: 'lin', dur: 0.5, to: at(0) },
+          { dur: 0.25, grip: 0, end: () => { tray.attach(held); const h = homeOf.get(held); held.position.copy(h.p); held.rotation.set(0, h.ry, 0); held = null; } },
+          { mode: 'lin', dur: 0.35, to: at(0.2) },
+          { mode: 'joint', dur: 0.9, to: () => ({ p: [rest.x, rest.y, rest.z], phi: DN }) },
+          { dur: 0.6 + ai * 0.9 }];
+      };
+      this._cellInit(cell, [rest.x, rest.y, rest.z], DN);
+      if (ai) cell.queue = [{ dur: 2.6 }];                                              // stagger the two arms
+    });
+  }
   // ---------- bipedal humanoid ----------
   _humanoid() {
     const g = new THREE.Group();
@@ -23786,37 +24120,6 @@ class Component extends DCLogic {
     };
     const aL = mkArm(-0.44, 'suction'), aR = mkArm(0.44, 'gripper');
     g.userData = { armL: aL, armR: aR, head: head, base: 'galbot' };
-    return g;
-  }
-
-  // ---------- dual-arm bench inspection cell ----------
-  _dualArmCell(accent) {
-    const g = new THREE.Group();
-    const shell = this._rawmat(0xf1f3f6, 0.34, 0.18), joint = this._rawmat(0x3a4049, 0.45, 0.5), dark = this._rawmat(0x1f2328, 0.5, 0.3);
-    const acc = this._led(accent, 0.8);
-    const ped = this._cyl(0.36, 0.46, 0.5, joint, 24); ped.position.y = 0.25; ped.castShadow = true; g.add(ped);
-    const torso = this._capsule(0.3, 0.8, shell, 24); torso.position.y = 1.0; g.add(torso);
-    const collar = new THREE.Mesh(new THREE.TorusGeometry(0.32, 0.035, 10, 32), acc); collar.rotation.x = Math.PI / 2; collar.position.y = 1.5; g.add(collar);
-    this._anim.pulsers.push({ mat: collar.material, base: 0.8, amp: 0.4, spd: 1.8 });
-    const head = this._rbox(0.44, 0.26, 0.36, 0.11, shell); head.position.y = 1.74; head.castShadow = true; g.add(head);
-    const cam = this._rbox(0.3, 0.1, 0.05, 0.03, this._rawmat(0x0c1018, 0.2, 0.6)); cam.position.set(0, 1.74, 0.18); g.add(cam);
-    const camLed = this._cyl(0.025, 0.025, 0.03, acc, 8); camLed.rotation.x = Math.PI / 2; camLed.position.set(0.1, 1.8, 0.2); g.add(camLed);
-    this._anim.pulsers.push({ mat: camLed.material, base: 1.2, amp: 0.8, spd: 3.0 });
-    const mkArm = (sx) => {
-      const sh = new THREE.Group(); sh.position.set(sx, 1.42, 0); g.add(sh);
-      sh.add(this._sph(0.12, joint));
-      const upper = this._capsule(0.085, 0.3, shell, 14); upper.position.y = -0.25; sh.add(upper);
-      const el = new THREE.Group(); el.position.y = -0.48; sh.add(el);
-      el.add(this._sph(0.095, joint));
-      const fore = this._capsule(0.07, 0.3, shell, 14); fore.position.y = -0.25; el.add(fore);
-      const wr = new THREE.Group(); wr.position.y = -0.48; el.add(wr);
-      const palm = this._rbox(0.1, 0.09, 0.1, 0.03, joint); palm.position.y = -0.08; wr.add(palm);
-      for (const fx of [-0.04, 0.04]) { const f = this._rbox(0.025, 0.12, 0.035, 0.01, shell); f.position.set(fx, -0.18, 0); wr.add(f); }
-      sh.rotation.x = 1.0; el.rotation.x = 0.9;
-      return { sh, el, wr };
-    };
-    const aL = mkArm(-0.3), aR = mkArm(0.3);
-    g.userData = { armL: aL, armR: aR, head: head };
     return g;
   }
 
