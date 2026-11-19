@@ -20887,10 +20887,11 @@ class Component extends DCLogic {
     this._tweenCam([-25, 9.5, 16], [-28, 1, -4], 1.7);
   }
   _enterLiftArea() {
-    // elevated view from the west looking east over Decontam toward the dispatch lift bank (doors face the camera)
+    // mid-height view from the west, looking due east down the Decontam aisle: the three dispatch lifts (L1-L3, doors facing the camera)
+    // sit upper-left, Sterile Storage racks upper-right, Decontam sinks in the foreground. ~30 deg down-tilt, ~43 units from the pivot.
     if (!this._controls) return;
     this._controls.minDistance = 18; this._controls.maxDistance = 215;
-    this._tweenCam([-26, 46, -4], [24, 0.5, -2], 1.7);
+    this._tweenCam([-3.3, 22.0, -8.1], [34.5, 0.5, -7.6], 1.7);
   }
   _enterStreet() {
     if (!this._controls) return;
